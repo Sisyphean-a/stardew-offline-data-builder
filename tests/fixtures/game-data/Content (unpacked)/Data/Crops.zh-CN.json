@@ -1,0 +1,12 @@
+{
+  "entityType": "crop",
+  "locale": "zh-CN",
+  "entries": [
+    {
+      "id": "kale-seeds",
+      "internalName": "KaleSeeds",
+      "name": "羽衣甘蓝种子",
+      "description": "在春天播种。"
+    }
+  ]
+}

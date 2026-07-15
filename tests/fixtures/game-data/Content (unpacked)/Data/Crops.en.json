@@ -1,0 +1,12 @@
+{
+  "entityType": "crop",
+  "locale": "en",
+  "entries": [
+    {
+      "id": "kale-seeds",
+      "internalName": "KaleSeeds",
+      "name": "Kale Seeds",
+      "description": "Plant these in spring."
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "entityType": "fish",
+  "locale": "en",
+  "entries": [
+    {
+      "id": "sturgeon",
+      "internalName": "Sturgeon",
+      "name": "Sturgeon",
+      "description": "A large river fish."
+    }
+  ]
+}

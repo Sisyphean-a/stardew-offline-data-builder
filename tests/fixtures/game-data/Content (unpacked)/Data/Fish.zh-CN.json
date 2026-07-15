@@ -1,0 +1,12 @@
+{
+  "entityType": "fish",
+  "locale": "zh-CN",
+  "entries": [
+    {
+      "id": "sturgeon",
+      "internalName": "Sturgeon",
+      "name": "鲟鱼",
+      "description": "一种大型河鱼。"
+    }
+  ]
+}

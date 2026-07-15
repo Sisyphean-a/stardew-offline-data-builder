@@ -1,0 +1,12 @@
+{
+  "entityType": "object",
+  "locale": "zh-CN",
+  "entries": [
+    {
+      "id": "24",
+      "internalName": "Parsnip",
+      "name": "防风草",
+      "description": "一种春季块茎。"
+    }
+  ]
+}

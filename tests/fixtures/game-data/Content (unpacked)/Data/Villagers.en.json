@@ -1,0 +1,12 @@
+{
+  "entityType": "villager",
+  "locale": "en",
+  "entries": [
+    {
+      "id": "Abigail",
+      "internalName": "Abigail",
+      "name": "Abigail",
+      "description": "She loves adventure."
+    }
+  ]
+}

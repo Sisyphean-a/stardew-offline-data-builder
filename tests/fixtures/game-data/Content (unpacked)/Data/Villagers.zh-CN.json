@@ -1,0 +1,12 @@
+{
+  "entityType": "villager",
+  "locale": "zh-CN",
+  "entries": [
+    {
+      "id": "Abigail",
+      "internalName": "Abigail",
+      "name": "阿比盖尔",
+      "description": "她热爱冒险。"
+    }
+  ]
+}

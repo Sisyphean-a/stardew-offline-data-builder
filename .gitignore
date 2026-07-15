@@ -34,6 +34,8 @@ dist/*
 
 # Project-specific generated data
 Content (unpacked)/
+!tests/fixtures/game-data/Content (unpacked)/
+!tests/fixtures/game-data/Content (unpacked)/**
 vendor/*
 !vendor/.gitkeep
 
