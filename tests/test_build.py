@@ -27,10 +27,15 @@ def test_build_fixture_creates_searchable_database(tmp_path: Path) -> None:
         WHERE entity_search MATCH '防风草 OR parsnip OR \"fang feng cao\" OR ffc'
         """
     ).fetchall()
+    image_path = connection.execute(
+        "SELECT image_path FROM entities WHERE id = 'object:24'"
+    ).fetchone()
     connection.close()
 
     assert rows
     assert rows[0][0] == "object:24"
+    assert image_path == ("images/object-24.webp",)
+    assert (output_dir / "images" / "object-24.webp").exists()
 
 
 def test_build_fixture_is_repeatable(tmp_path: Path) -> None:
@@ -77,13 +82,15 @@ def test_build_merges_community_data_and_writes_reports(tmp_path: Path) -> None:
 
     connection = sqlite3.connect(db_path)
     row = connection.execute(
-        "SELECT extra_json FROM entities WHERE id = 'object:24'"
+        "SELECT extra_json, image_path FROM entities WHERE id = 'object:24'"
     ).fetchone()
     connection.close()
 
     extra = json.loads(row[0])
     assert extra["price"] == 35
     assert extra["season"] == "spring"
+    assert row[1] == "images/object-24.webp"
+    assert (output_dir / "images" / "object-24.webp").exists()
 
     unmatched = json.loads((reports_dir / "unmatched.json").read_text(encoding="utf-8"))
     assert unmatched[0]["source_id"] == "999"

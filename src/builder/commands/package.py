@@ -79,6 +79,14 @@ def create_svdata_package(
                 f"{REPORTS_DIRNAME}/{report_file.name}",
                 timestamp,
             )
+        images_dir = output_dir / "images"
+        for image_file in sorted(images_dir.rglob("*.webp")):
+            add_file_to_zip(
+                archive,
+                image_file,
+                image_file.relative_to(output_dir).as_posix(),
+                timestamp,
+            )
     return package_path
 
 

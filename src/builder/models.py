@@ -28,6 +28,7 @@ class NormalizedEntity(BaseModel):
     description_en: str | None
     category: str | None
     translation_status: str = "complete"
+    image_path: str | None = None
     extra_json: dict[str, Any] = Field(default_factory=dict)
     source_file: str
     aliases: list[str] = Field(default_factory=list)

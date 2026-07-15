@@ -51,6 +51,7 @@ def test_build_writes_manifest_and_svdata(tmp_path: Path, monkeypatch) -> None:
 
     with ZipFile(package_path) as archive:
         assert sorted(archive.namelist()) == [
+            "images/object-24.webp",
             "manifest.json",
             "reports/build-summary.json",
             "reports/errors.json",

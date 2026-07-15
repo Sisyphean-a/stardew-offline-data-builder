@@ -15,6 +15,7 @@ from builder.config import (
     REPORTS_DIRNAME,
 )
 from builder.database.writer import write_database
+from builder.pipeline.images import materialize_entity_images
 from builder.pipeline.match import match_community_entities
 from builder.pipeline.merge import merge_official_and_community
 from builder.pipeline.normalize import normalize_entities
@@ -45,6 +46,11 @@ def build_fixture_command(output: str) -> None:
     aliases = load_aliases(Path("data/aliases.zh-CN.json"))
     categories = load_categories(Path("data/categories.zh-CN.json"))
     entities = normalize_entities(raw_entities, aliases=aliases, categories=categories)
+    entities = materialize_entity_images(
+        entities,
+        asset_root=unpacked_dir,
+        output_dir=output_dir,
+    )
     search_documents = build_search_documents(entities)
     summary = summarize_entities(entities)
 
@@ -104,6 +110,11 @@ def build_command(
     community_entities = normalize_entities(community_raw, aliases={}, categories={})
     matches, unmatched = match_community_entities(official_entities, community_entities, overrides)
     merged_entities = merge_official_and_community(official_entities, community_entities, matches)
+    merged_entities = materialize_entity_images(
+        merged_entities,
+        asset_root=resolved_unpacked_dir,
+        output_dir=output_dir,
+    )
     search_documents = build_search_documents(merged_entities)
     summary = summarize_entities(merged_entities)
     summary.unmatched = len(unmatched)

@@ -6,7 +6,9 @@
       "id": "24",
       "internalName": "Parsnip",
       "name": "防风草",
-      "description": "一种春季块茎。"
+      "description": "一种春季块茎。",
+      "imageSource": "Sprites/objects.png",
+      "imageRect": [0, 0, 8, 8]
     }
   ]
 }

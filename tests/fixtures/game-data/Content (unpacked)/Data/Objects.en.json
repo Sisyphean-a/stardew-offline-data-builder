@@ -6,7 +6,9 @@
       "id": "24",
       "internalName": "Parsnip",
       "name": "Parsnip",
-      "description": "A spring tuber."
+      "description": "A spring tuber.",
+      "imageSource": "Sprites/objects.png",
+      "imageRect": [0, 0, 8, 8]
     }
   ]
 }
