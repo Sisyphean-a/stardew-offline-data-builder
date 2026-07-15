@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+.Python
+.coverage
+.coverage.*
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.nox/
+.tox/
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Build outputs
+build/*
+!build/.gitkeep
+dist/*
+!dist/.gitkeep
+*.svdata
+*.db
+*.db-shm
+*.db-wal
+*.tmp
+
+# Project-specific generated data
+Content (unpacked)/
+vendor/*
+!vendor/.gitkeep
+
+# Editors and OS files
+.idea/
+.vscode/
+.codegraph/
+Thumbs.db
+Desktop.ini
+.DS_Store
