@@ -1,0 +1,24 @@
+schema_version: 1
+goal: "phase-1-to-4"
+status: active
+objective: "完成阶段 1 到阶段 4：fixture 数据闭环、doctor、unpack，以及四类官方中文解析。"
+start_point: "仓库当前只有阶段 0 骨架，CLI 仅能显示帮助，没有业务实现。"
+acceptance:
+  - "python -m builder build-fixture --output .\\dist 可以生成可检索的 SQLite 数据库。"
+  - "python -m builder inspect .\\dist\\stardew.db 可以输出数据库概要。"
+  - "python -m builder doctor 能检查游戏目录、StardewXnbHack、社区数据目录与 SQLite FTS4。"
+  - "python -m builder unpack 能调用外部解包程序、支持跳过已有结果与 --force。"
+  - "普通物品、作物、鱼类、村民四类官方中文解析器完成，并有测试覆盖。"
+  - "pytest 与 ruff check . 通过。"
+non_goals:
+  - "不实现阶段 5 的社区数据合并。"
+  - "不实现阶段 6 及之后的打包、图片、Android 等功能。"
+budget:
+  kind: none
+  limit: null
+current_iteration: 0
+next_action: "梳理阶段 1 到 4 的实现边界，设计最小模块与夹具。"
+blocker_signature: null
+blocker_count: 0
+owner_stop: null
+updated_at: "2026-07-15"
