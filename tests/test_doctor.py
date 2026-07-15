@@ -5,6 +5,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from builder.cli import app
+from builder.utils.paths import default_xnb_hack_path
 
 runner = CliRunner()
 
@@ -53,3 +54,16 @@ def test_doctor_reports_missing_xnb(tmp_path: Path) -> None:
 
     assert result.exit_code == 4
     assert "未找到 StardewXnbHack" in result.stdout
+
+
+def test_default_xnb_hack_path_prefers_exe(tmp_path: Path) -> None:
+    game_dir = tmp_path / "game"
+    game_dir.mkdir()
+    exe_path = game_dir / "StardewXnbHack.exe"
+    py_path = game_dir / "StardewXnbHack.py"
+    exe_path.write_text("", encoding="utf-8")
+    py_path.write_text("", encoding="utf-8")
+
+    resolved = default_xnb_hack_path(game_dir)
+
+    assert resolved == exe_path

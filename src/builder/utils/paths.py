@@ -41,7 +41,14 @@ def ensure_community_data_directory(path: Path) -> Path:
 
 
 def default_xnb_hack_path(game_dir: Path) -> Path:
-    return game_dir / "StardewXnbHack.py"
+    candidates = [
+        game_dir / "StardewXnbHack.exe",
+        game_dir / "StardewXnbHack.py",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
 
 
 def default_unpacked_dir(game_dir: Path) -> Path:
