@@ -106,3 +106,52 @@ def test_build_is_repeatable_with_fixed_generated_at(tmp_path: Path, monkeypatch
     assert sha256_file(output_a / "stardew-zh-cn.svdata") == sha256_file(
         output_b / "stardew-zh-cn.svdata"
     )
+
+
+def test_build_manifest_and_summary_include_extra_counts(tmp_path: Path, monkeypatch) -> None:
+    game_dir = tmp_path / "phase7-game"
+    unpacked_data_dir = game_dir / "Content (unpacked)" / "Data"
+    unpacked_data_dir.mkdir(parents=True)
+    (game_dir / "Content").mkdir(parents=True, exist_ok=True)
+    (game_dir / "Stardew Valley.dll").write_text("", encoding="utf-8")
+    shutil.copytree(
+        Path("tests/fixtures/game-data/Content (unpacked)"),
+        game_dir / "Content (unpacked)",
+        dirs_exist_ok=True,
+    )
+    extra_payload = {
+        "entries": [
+            {
+                "id": "shadow-brute",
+                "internalName": "ShadowBrute",
+                "name": "暗影蛮兵",
+                "description": "测试怪物",
+            }
+        ]
+    }
+    (unpacked_data_dir / "Monster.zh-CN.json").write_text(
+        json.dumps(extra_payload, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "phase7-dist"
+    monkeypatch.setattr("builder.commands.build.current_utc_iso", lambda: FIXED_TIME)
+    result = runner.invoke(
+        app,
+        [
+            "build",
+            "--game-dir",
+            str(game_dir),
+            "--community-data",
+            str(Path("tests/fixtures/community-data")),
+            "--output",
+            str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    summary = json.loads(
+        (output_dir / "reports" / "build-summary.json").read_text(encoding="utf-8")
+    )
+    assert manifest["content"]["extraCounts"]["monster"] == 1
+    assert summary["counts"]["extraCounts"]["monster"] == 1

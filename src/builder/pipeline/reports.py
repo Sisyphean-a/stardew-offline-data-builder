@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
+from builder.config import PRIMARY_ENTITY_TYPES
 from builder.models import BuildSummary, NormalizedEntity, UnmatchedRecord
 from builder.utils.json_io import dump_json_file
 
@@ -25,6 +26,11 @@ def write_build_reports(
     errors: list[dict[str, str]],
 ) -> None:
     reports_dir.mkdir(parents=True, exist_ok=True)
+    extra_counts = {
+        entity_type: count
+        for entity_type, count in summary.counts_by_type.items()
+        if entity_type not in PRIMARY_ENTITY_TYPES
+    }
     dump_json_file(
         reports_dir / "build-summary.json",
         {
@@ -35,6 +41,7 @@ def write_build_reports(
                 "crops": summary.counts_by_type.get("crop", 0),
                 "fish": summary.counts_by_type.get("fish", 0),
                 "villagers": summary.counts_by_type.get("villager", 0),
+                "extraCounts": extra_counts,
             },
             "warnings": {
                 "missingTranslations": summary.missing_translations,

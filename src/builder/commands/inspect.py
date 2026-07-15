@@ -4,6 +4,7 @@ from pathlib import Path
 
 from rich.console import Console
 
+from builder.config import ENTITY_TYPE_LABELS
 from builder.database.writer import inspect_database
 
 console = Console()
@@ -18,5 +19,8 @@ def inspect_command(db_path: str) -> None:
     console.print(f"作物：{summary['crops']}")
     console.print(f"鱼类：{summary['fish']}")
     console.print(f"村民：{summary['villagers']}")
+    for entity_type, count in sorted(summary["extra_counts"].items()):
+        label = ENTITY_TYPE_LABELS.get(entity_type, entity_type)
+        console.print(f"{label}：{count}")
     console.print(f"缺少中文：{summary['missing_translations']}")
     console.print(f"FTS 搜索：{summary['fts']}")

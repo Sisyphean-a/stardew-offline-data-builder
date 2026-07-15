@@ -98,6 +98,7 @@ def insert_entities(
                 entity.description_en,
                 entity.category,
                 entity.translation_status,
+                entity.image_path,
                 orjson.dumps(entity.extra_json).decode("utf-8"),
                 entity.source_file,
                 created_at,
@@ -108,8 +109,8 @@ def insert_entities(
         INSERT INTO entities(
             id, entity_type, game_id, internal_name, name_zh, name_en,
             description_zh, description_en, category, translation_status,
-            extra_json, source_file, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            image_path, extra_json, source_file, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
     )
@@ -156,6 +157,11 @@ def insert_search_documents(
 
 def inspect_database(db_path: Path) -> dict[str, str | int]:
     connection = sqlite3.connect(db_path)
+    counts_by_type = dict(
+        connection.execute(
+            "SELECT entity_type, COUNT(*) FROM entities GROUP BY entity_type"
+        ).fetchall()
+    )
     summary = {
         "schema_version": lookup_meta(connection, "schema_version"),
         "locale": lookup_meta(connection, "locale"),
@@ -185,6 +191,11 @@ def inspect_database(db_path: Path) -> dict[str, str | int]:
             if query_count(connection, "SELECT COUNT(*) FROM entity_search") >= 0
             else "异常"
         ),
+        "extra_counts": {
+            entity_type: count
+            for entity_type, count in counts_by_type.items()
+            if entity_type not in {"object", "crop", "fish", "villager"}
+        },
     }
     connection.close()
     return summary

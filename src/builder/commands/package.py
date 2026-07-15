@@ -5,7 +5,12 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from builder import __version__
-from builder.config import MANIFEST_FILENAME, PACKAGE_BASENAME, REPORTS_DIRNAME
+from builder.config import (
+    MANIFEST_FILENAME,
+    PACKAGE_BASENAME,
+    PRIMARY_ENTITY_TYPES,
+    REPORTS_DIRNAME,
+)
 from builder.models import BuildSummary
 from builder.utils.hashing import sha256_file
 from builder.utils.json_io import dump_json_file
@@ -21,6 +26,11 @@ def write_manifest(
     game_version: str = "unknown",
 ) -> Path:
     manifest_path = output_dir / MANIFEST_FILENAME
+    extra_counts = {
+        entity_type: count
+        for entity_type, count in summary.counts_by_type.items()
+        if entity_type not in PRIMARY_ENTITY_TYPES
+    }
     dump_json_file(
         manifest_path,
         {
@@ -40,6 +50,7 @@ def write_manifest(
                 "crops": summary.counts_by_type.get("crop", 0),
                 "fish": summary.counts_by_type.get("fish", 0),
                 "villagers": summary.counts_by_type.get("villager", 0),
+                "extraCounts": extra_counts,
                 "missingTranslations": summary.missing_translations,
             },
         },

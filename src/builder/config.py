@@ -12,6 +12,28 @@ TEMP_DB_SUFFIX = ".tmp"
 MANIFEST_FILENAME = "manifest.json"
 REPORTS_DIRNAME = "reports"
 PACKAGE_BASENAME = "stardew-{locale}.svdata"
+PRIMARY_ENTITY_TYPES = ("object", "crop", "fish", "villager")
+ENTITY_TYPE_LABELS = {
+    "object": "物品",
+    "crop": "作物",
+    "fish": "鱼类",
+    "villager": "村民",
+    "monster": "怪物",
+    "weapon": "武器",
+    "achievement": "成就",
+    "ring": "戒指",
+    "mineral": "矿物",
+    "drop": "掉落",
+    "bundle": "收集包",
+    "quest": "任务",
+    "shop": "商店",
+    "special_order": "特殊订单",
+    "ginger_island": "姜岛数据",
+    "npc_schedule": "NPC日程",
+    "villager_gift": "村民礼物",
+    "cooking_recipe": "料理",
+    "crafting_recipe": "制作配方",
+}
 
 EXIT_OK = 0
 EXIT_UNKNOWN = 1

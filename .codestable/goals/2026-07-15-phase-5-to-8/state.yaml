@@ -17,8 +17,8 @@ non_goals:
 budget:
   kind: none
   limit: null
-current_iteration: 2
-next_action: "进入阶段 7：扩展完整数据范围，并先从新增 fixture 与 schema 扩展切入。"
+current_iteration: 3
+next_action: "开始阶段 8：把图片处理接入 build 输出、image_path 与数据包。"
 blocker_signature: null
 blocker_count: 0
 owner_stop: null

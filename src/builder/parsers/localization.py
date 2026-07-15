@@ -4,6 +4,28 @@ from pathlib import Path
 
 from builder.models import DiscoveredJsonFile, RawEntity
 
+ENTITY_TYPE_KEYWORDS = {
+    "object": ("object",),
+    "crop": ("crop",),
+    "fish": ("fish",),
+    "villager": ("villager", "npc"),
+    "villager_gift": ("gift",),
+    "npc_schedule": ("schedule",),
+    "cooking_recipe": ("cooking", "recipe-cooking"),
+    "crafting_recipe": ("crafting", "recipe-crafting"),
+    "shop": ("shop",),
+    "quest": ("quest",),
+    "bundle": ("bundle",),
+    "monster": ("monster",),
+    "drop": ("drop",),
+    "mineral": ("mineral",),
+    "weapon": ("weapon",),
+    "ring": ("ring",),
+    "achievement": ("achievement",),
+    "special_order": ("special-order", "specialorder"),
+    "ginger_island": ("ginger-island", "gingerisland"),
+}
+
 
 def classify_localized_json(path: Path, payload: object) -> DiscoveredJsonFile | None:
     if not isinstance(payload, dict) or not isinstance(payload.get("entries"), list):
@@ -22,14 +44,9 @@ def classify_localized_json(path: Path, payload: object) -> DiscoveredJsonFile |
 
 def infer_entity_type(path: Path) -> str | None:
     stem = path.stem.lower()
-    if "object" in stem:
-        return "object"
-    if "crop" in stem:
-        return "crop"
-    if "fish" in stem:
-        return "fish"
-    if "villager" in stem or "npc" in stem:
-        return "villager"
+    for entity_type, keywords in ENTITY_TYPE_KEYWORDS.items():
+        if any(keyword in stem for keyword in keywords):
+            return entity_type
     return None
 
 
@@ -72,6 +89,21 @@ def build_raw_entities_from_entries(
             )
         )
     return entities
+
+
+def parse_generic_localized_file(
+    path: Path,
+    payload: object,
+    locale: str | None,
+    entity_type: str,
+) -> list[RawEntity]:
+    return build_raw_entities_from_entries(
+        path,
+        payload,
+        locale,
+        entity_type=entity_type,
+        source="official",
+    )
 
 
 def optional_text(value: object) -> str | None:

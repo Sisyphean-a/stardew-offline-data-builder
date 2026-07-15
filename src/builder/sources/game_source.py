@@ -5,7 +5,7 @@ from pathlib import Path
 from builder.models import DiscoveredJsonFile, RawEntity
 from builder.parsers.crops import parse_crops_file
 from builder.parsers.fish import parse_fish_file
-from builder.parsers.localization import classify_localized_json
+from builder.parsers.localization import classify_localized_json, parse_generic_localized_file
 from builder.parsers.objects import parse_objects_file
 from builder.parsers.villagers import parse_villagers_file
 from builder.utils.json_io import load_json_file
@@ -36,5 +36,12 @@ def parse_discovered_file(discovered: DiscoveredJsonFile, payload: object) -> li
         "fish": parse_fish_file,
         "villager": parse_villagers_file,
     }
-    parser = parser_map[discovered.entity_type]
-    return parser(Path(discovered.path), payload, discovered.locale)
+    parser = parser_map.get(discovered.entity_type)
+    if parser is not None:
+        return parser(Path(discovered.path), payload, discovered.locale)
+    return parse_generic_localized_file(
+        Path(discovered.path),
+        payload,
+        discovered.locale,
+        discovered.entity_type,
+    )
