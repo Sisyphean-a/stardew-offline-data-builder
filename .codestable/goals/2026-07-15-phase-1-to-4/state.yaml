@@ -1,6 +1,6 @@
 schema_version: 1
 goal: "phase-1-to-4"
-status: active
+status: complete
 objective: "完成阶段 1 到阶段 4：fixture 数据闭环、doctor、unpack，以及四类官方中文解析。"
 start_point: "仓库当前只有阶段 0 骨架，CLI 仅能显示帮助，没有业务实现。"
 acceptance:
@@ -16,8 +16,8 @@ non_goals:
 budget:
   kind: none
   limit: null
-current_iteration: 0
-next_action: "梳理阶段 1 到 4 的实现边界，设计最小模块与夹具。"
+current_iteration: 1
+next_action: "已完成阶段 1 到阶段 4，实现与验收均已结束。"
 blocker_signature: null
 blocker_count: 0
 owner_stop: null
