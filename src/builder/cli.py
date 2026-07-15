@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 
 from builder import __version__
 from builder.commands.build import build_command, build_fixture_command
 from builder.commands.doctor import doctor_command
 from builder.commands.inspect import inspect_command
+from builder.commands.package import package_existing_output
 from builder.commands.unpack import unpack_command
+from builder.database.writer import inspect_database
+from builder.models import BuildSummary
 from builder.utils.console import configure_stdio
 
 app = typer.Typer(
@@ -74,3 +79,23 @@ def unpack(
 @app.command("inspect")
 def inspect(db_path: str = typer.Argument(..., help="SQLite 数据库路径。")) -> None:
     inspect_command(db_path)
+
+
+@app.command("package")
+def package(
+    output: str = typer.Option(".\\dist", help="构建输出目录。"),
+    locale: str = typer.Option("zh-CN", help="语言。"),
+) -> None:
+    output_dir = Path(output)
+    inspected = inspect_database(output_dir / "stardew.db")
+    summary = BuildSummary(
+        entities=int(inspected["entities"]),
+        missing_translations=int(inspected["missing_translations"]),
+        counts_by_type={
+            "object": int(inspected["objects"]),
+            "crop": int(inspected["crops"]),
+            "fish": int(inspected["fish"]),
+            "villager": int(inspected["villagers"]),
+        },
+    )
+    package_existing_output(output_dir=output_dir, locale=locale, summary=summary)

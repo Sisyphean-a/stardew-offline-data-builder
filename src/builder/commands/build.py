@@ -5,12 +5,14 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from builder.commands.package import create_svdata_package, write_manifest
 from builder.config import (
     BUILD_DB_FILENAME,
     DEFAULT_FIXTURE_ROOT,
     DEFAULT_LOCALE,
     EXIT_DATABASE,
     EXIT_GAME_DIR,
+    REPORTS_DIRNAME,
 )
 from builder.database.writer import write_database
 from builder.pipeline.match import match_community_entities
@@ -21,12 +23,14 @@ from builder.pipeline.search_tokens import build_search_documents
 from builder.sources.community_source import load_raw_entities_from_community_dir
 from builder.sources.game_source import load_raw_entities_from_unpacked_dir
 from builder.sources.override_source import load_aliases, load_categories, load_match_overrides
+from builder.utils.hashing import sha256_paths
 from builder.utils.paths import (
     ensure_community_data_directory,
     ensure_directory,
     ensure_game_directory,
     ensure_json_output,
 )
+from builder.utils.time import current_utc_iso
 
 console = Console()
 
@@ -78,11 +82,21 @@ def build_command(
 
     output_dir = ensure_directory(Path(output))
     db_path = output_dir / BUILD_DB_FILENAME
-    reports_dir = output_dir / "reports"
+    reports_dir = output_dir / REPORTS_DIRNAME
+    generated_at = current_utc_iso()
 
     aliases = load_aliases(Path("data/aliases.zh-CN.json"))
     categories = load_categories(Path("data/categories.zh-CN.json"))
     overrides = load_match_overrides(Path("data/overrides.zh-CN.json"))
+    source_hash = sha256_paths(
+        [
+            *sorted(resolved_unpacked_dir.rglob("*.json")),
+            *sorted(resolved_community_dir.rglob("*.json")),
+            Path("data/aliases.zh-CN.json"),
+            Path("data/categories.zh-CN.json"),
+            Path("data/overrides.zh-CN.json"),
+        ]
+    )
 
     official_raw = load_raw_entities_from_unpacked_dir(resolved_unpacked_dir)
     official_entities = normalize_entities(official_raw, aliases=aliases, categories=categories)
@@ -104,6 +118,8 @@ def build_command(
             search_documents,
             locale=DEFAULT_LOCALE,
             summary=summary,
+            generated_at=generated_at,
+            source_hash=source_hash,
         )
         write_build_reports(
             reports_dir=reports_dir,
@@ -112,7 +128,23 @@ def build_command(
             missing_translations=missing_translations,
             errors=[],
         )
+        manifest_path = write_manifest(
+            output_dir=output_dir,
+            locale=DEFAULT_LOCALE,
+            generated_at=generated_at,
+            db_path=db_path,
+            summary=summary,
+        )
+        package_path = create_svdata_package(
+            output_dir=output_dir,
+            locale=DEFAULT_LOCALE,
+            generated_at=generated_at,
+            db_path=db_path,
+            manifest_path=manifest_path,
+            reports_dir=reports_dir,
+        )
     except Exception as exc:  # pragma: no cover
         raise typer.Exit(code=EXIT_DATABASE) from exc
 
     console.print(f"已完成构建：{db_path}")
+    console.print(f"已生成数据包：{package_path}")

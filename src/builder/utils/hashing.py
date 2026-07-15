@@ -10,3 +10,12 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(65536), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def sha256_paths(paths: list[Path]) -> str:
+    digest = sha256()
+    for path in sorted(paths, key=lambda item: item.as_posix()):
+        digest.update(path.as_posix().encode("utf-8"))
+        if path.is_file():
+            digest.update(path.read_bytes())
+    return digest.hexdigest()

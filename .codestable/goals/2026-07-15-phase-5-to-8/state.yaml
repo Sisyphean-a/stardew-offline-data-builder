@@ -17,8 +17,8 @@ non_goals:
 budget:
   kind: none
   limit: null
-current_iteration: 0
-next_action: "盘点阶段 5 到阶段 8 的现状与缺口，先收敛阶段 5 的最小实现面。"
+current_iteration: 2
+next_action: "进入阶段 7：扩展完整数据范围，并先从新增 fixture 与 schema 扩展切入。"
 blocker_signature: null
 blocker_count: 0
 owner_stop: null

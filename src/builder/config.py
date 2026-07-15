@@ -9,6 +9,9 @@ DEFAULT_FIXTURE_ROOT = Path("tests/fixtures/game-data")
 DEFAULT_COMMUNITY_DATA = Path("tests/fixtures/community-data")
 BUILD_DB_FILENAME = "stardew.db"
 TEMP_DB_SUFFIX = ".tmp"
+MANIFEST_FILENAME = "manifest.json"
+REPORTS_DIRNAME = "reports"
+PACKAGE_BASENAME = "stardew-{locale}.svdata"
 
 EXIT_OK = 0
 EXIT_UNKNOWN = 1

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import UTC, datetime
 from pathlib import Path
 
 import orjson
@@ -9,6 +8,7 @@ import orjson
 from builder import __version__
 from builder.config import SCHEMA_VERSION, TEMP_DB_SUFFIX
 from builder.models import BuildSummary, NormalizedEntity, SearchDocument
+from builder.utils.time import current_utc_iso
 
 
 def write_database(
@@ -17,6 +17,10 @@ def write_database(
     search_documents: list[SearchDocument],
     locale: str,
     summary: BuildSummary,
+    generated_at: str | None = None,
+    source_hash: str = "",
+    community_data_version: str = "unknown",
+    game_version: str = "unknown",
 ) -> None:
     tmp_path = db_path.with_suffix(db_path.suffix + TEMP_DB_SUFFIX)
     if tmp_path.exists():
@@ -25,8 +29,17 @@ def write_database(
     connection = sqlite3.connect(tmp_path)
     try:
         create_schema(connection)
-        insert_meta(connection, locale, summary)
-        insert_entities(connection, entities)
+        created_at = generated_at or current_utc_iso()
+        insert_meta(
+            connection,
+            locale,
+            summary,
+            generated_at=created_at,
+            source_hash=source_hash,
+            community_data_version=community_data_version,
+            game_version=game_version,
+        )
+        insert_entities(connection, entities, created_at=created_at)
         insert_aliases(connection, entities)
         insert_search_documents(connection, search_documents)
         connection.commit()
@@ -44,20 +57,33 @@ def create_schema(connection: sqlite3.Connection) -> None:
     connection.executescript(schema_path.read_text(encoding="utf-8"))
 
 
-def insert_meta(connection: sqlite3.Connection, locale: str, summary: BuildSummary) -> None:
-    generated_at = datetime.now(UTC).isoformat()
+def insert_meta(
+    connection: sqlite3.Connection,
+    locale: str,
+    summary: BuildSummary,
+    generated_at: str,
+    source_hash: str,
+    community_data_version: str,
+    game_version: str,
+) -> None:
     rows = [
         ("schema_version", str(SCHEMA_VERSION)),
         ("builder_version", __version__),
         ("locale", locale),
         ("generated_at", generated_at),
         ("entity_count", str(summary.entities)),
+        ("community_data_version", community_data_version),
+        ("game_version", game_version),
+        ("source_hash", source_hash),
     ]
     connection.executemany("INSERT INTO build_meta(key, value) VALUES (?, ?)", rows)
 
 
-def insert_entities(connection: sqlite3.Connection, entities: list[NormalizedEntity]) -> None:
-    created_at = datetime.now(UTC).isoformat()
+def insert_entities(
+    connection: sqlite3.Connection,
+    entities: list[NormalizedEntity],
+    created_at: str,
+) -> None:
     rows = []
     for entity in entities:
         rows.append(
