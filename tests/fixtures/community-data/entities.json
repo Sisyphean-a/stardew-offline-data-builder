@@ -1,0 +1,20 @@
+{
+  "entityType": "object",
+  "entries": [
+    {
+      "id": "24",
+      "internalName": "Parsnip",
+      "name": "Parsnip",
+      "description": "Community text",
+      "price": 35,
+      "season": "spring"
+    },
+    {
+      "id": "999",
+      "internalName": "GhostTurnip",
+      "name": "Ghost Turnip",
+      "description": "Unmatched entity",
+      "price": 999
+    }
+  ]
+}

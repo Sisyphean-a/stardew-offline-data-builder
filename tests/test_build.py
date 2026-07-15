@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -39,3 +41,49 @@ def test_build_fixture_is_repeatable(tmp_path: Path) -> None:
     assert first.exit_code == 0
     assert second.exit_code == 0
     assert (output_dir / "stardew.db").exists()
+
+
+def test_build_merges_community_data_and_writes_reports(tmp_path: Path) -> None:
+    game_dir = tmp_path / "game"
+    (game_dir / "Content").mkdir(parents=True)
+    (game_dir / "Content (unpacked)").mkdir()
+    (game_dir / "Stardew Valley.dll").write_text("", encoding="utf-8")
+    shutil.copytree(
+        Path("tests/fixtures/game-data/Content (unpacked)"),
+        game_dir / "Content (unpacked)",
+        dirs_exist_ok=True,
+    )
+    output_dir = tmp_path / "build-output"
+
+    result = runner.invoke(
+        app,
+        [
+            "build",
+            "--game-dir",
+            str(game_dir),
+            "--community-data",
+            str(Path("tests/fixtures/community-data")),
+            "--output",
+            str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    db_path = output_dir / "stardew.db"
+    reports_dir = output_dir / "reports"
+    assert db_path.exists()
+    assert (reports_dir / "build-summary.json").exists()
+    assert (reports_dir / "unmatched.json").exists()
+
+    connection = sqlite3.connect(db_path)
+    row = connection.execute(
+        "SELECT extra_json FROM entities WHERE id = 'object:24'"
+    ).fetchone()
+    connection.close()
+
+    extra = json.loads(row[0])
+    assert extra["price"] == 35
+    assert extra["season"] == "spring"
+
+    unmatched = json.loads((reports_dir / "unmatched.json").read_text(encoding="utf-8"))
+    assert unmatched[0]["source_id"] == "999"

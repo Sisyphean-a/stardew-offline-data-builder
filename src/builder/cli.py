@@ -3,7 +3,7 @@ from __future__ import annotations
 import typer
 
 from builder import __version__
-from builder.commands.build import build_fixture_command
+from builder.commands.build import build_command, build_fixture_command
 from builder.commands.doctor import doctor_command
 from builder.commands.inspect import inspect_command
 from builder.commands.unpack import unpack_command
@@ -35,6 +35,21 @@ def main(
 @app.command("build-fixture")
 def build_fixture(output: str = typer.Option(".\\dist", help="输出目录。")) -> None:
     build_fixture_command(output)
+
+
+@app.command("build")
+def build(
+    game_dir: str = typer.Option(..., help="游戏目录。"),
+    community_data: str = typer.Option(..., help="社区数据目录。"),
+    output: str = typer.Option(".\\dist", help="输出目录。"),
+    unpacked_dir: str | None = typer.Option(None, help="已解包目录。"),
+) -> None:
+    build_command(
+        game_dir=game_dir,
+        community_data=community_data,
+        output=output,
+        unpacked_dir=unpacked_dir,
+    )
 
 
 @app.command("doctor")
