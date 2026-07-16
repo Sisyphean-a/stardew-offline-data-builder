@@ -49,6 +49,7 @@ class SearchDocument(BaseModel):
 class BuildSummary(BaseModel):
     entities: int
     missing_translations: int
+    not_applicable_translations: int = 0
     counts_by_type: dict[str, int] = Field(default_factory=dict)
     unmatched: int = 0
     duplicate_ids: int = 0

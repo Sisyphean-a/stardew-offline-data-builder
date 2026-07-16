@@ -97,6 +97,29 @@ def test_real_official_layout_derives_drops_minerals_and_rings(tmp_path: Path) -
     assert by_id["drop:Green-Slime:0"].name_zh == "紫水晶"
 
 
+def test_real_layout_resolves_localized_records_and_filters_technical_keys(
+    tmp_path: Path,
+) -> None:
+    game_dir = create_real_layout(tmp_path)
+    add_localization_gap_data(game_dir)
+
+    entities = load_game_data_from_unpacked_dir(game_dir / "Content (unpacked)").entities
+    normalized = normalize_entities(entities, aliases={}, categories={})
+    by_id = {entity.id: entity for entity in normalized}
+
+    assert by_id["furniture:0"].name_zh == "橡木椅子"
+    assert by_id["special_order:Caroline"].name_zh == "岛屿食材"
+    assert by_id["special_order:Caroline"].description_zh == "请售出 100 份岛屿作物。"
+    assert by_id["quest:Bats"].name_zh == "蝙蝠"
+    assert by_id["bundle:0"].name_zh == "工艺室"
+    assert by_id["cooking_recipe:Cookies"].name_zh == "曲奇"
+    assert by_id["crafting_recipe:Wood-Fence"].name_zh == "木栅栏"
+    assert by_id["npc_schedule:Abigail:11"].translation_status == "not_applicable"
+    assert by_id["tailoring_recipe:(H)43"].translation_status == "not_applicable"
+    assert by_id["shop:AdventureShop"].translation_status == "not_applicable"
+    assert by_id["villager:???"].translation_status == "not_applicable"
+
+
 def create_real_layout(tmp_path: Path) -> Path:
     game_dir = tmp_path / "真实游戏"
     unpacked_dir = game_dir / "Content (unpacked)"
@@ -156,6 +179,92 @@ def create_real_layout(tmp_path: Path) -> Path:
     write_image(unpacked_dir / "TileSheets" / "crops.png", (16, 16))
     write_image(unpacked_dir / "Portraits" / "Abigail.png", (32, 64))
     return game_dir
+
+
+def add_localization_gap_data(game_dir: Path) -> None:
+    unpacked_dir = game_dir / "Content (unpacked)"
+    add_localized_recipe_items(unpacked_dir)
+    write_json(
+        unpacked_dir / "Data" / "Furniture.json",
+        {"0": "Oak Chair/chair/-1/-1/4/350/-1/[LocalizedText Strings\\Furniture:OakChair]"},
+    )
+    write_json(unpacked_dir / "Strings" / "Furniture.json", {"OakChair": "Oak Chair"})
+    write_json(unpacked_dir / "Strings" / "Furniture.zh-CN.json", {"OakChair": "橡木椅子"})
+    write_json(
+        unpacked_dir / "Data" / "SpecialOrders.json",
+        {"Caroline": {"Name": "[Caroline_Name]", "Text": "[Caroline_Text]"}},
+    )
+    write_json(
+        unpacked_dir / "Strings" / "SpecialOrderStrings.json",
+        {"Caroline_Name": "Island Ingredients", "Caroline_Text": "Ship 100 island crops."},
+    )
+    write_json(
+        unpacked_dir / "Strings" / "SpecialOrderStrings.zh-CN.json",
+        {"Caroline_Name": "岛屿食材", "Caroline_Text": "请售出 100 份岛屿作物。"},
+    )
+
+
+def add_localized_recipe_items(unpacked_dir: Path) -> None:
+    merge_json(
+        unpacked_dir / "Data" / "Objects.json",
+        {
+            "223": object_data("Cookies", "Cookies", 0),
+            "322": object_data("Wood Fence", "WoodFence", 0),
+        },
+    )
+    merge_json(
+        unpacked_dir / "Strings" / "Objects.json",
+        {"Cookies_Name": "Cookies", "WoodFence_Name": "Wood Fence"},
+    )
+    merge_json(
+        unpacked_dir / "Strings" / "Objects.zh-CN.json",
+        {"Cookies_Name": "曲奇", "WoodFence_Name": "木栅栏"},
+    )
+    write_json(
+        unpacked_dir / "Data" / "CookingRecipes.json",
+        {"Cookies": "246 1/3 7/223/null/"},
+    )
+    write_json(
+        unpacked_dir / "Data" / "CraftingRecipes.json",
+        {"Wood Fence": "388 2/Field/322/false/default/"},
+    )
+    write_json(unpacked_dir / "Data" / "TailoringRecipes.json", {"(H)43": {"Id": "(H)43"}})
+    write_json(
+        unpacked_dir / "Data" / "MonsterSlayerQuests.json",
+        {
+            "Bats": {
+                "DisplayName": "[LocalizedText Strings\\\\Locations:AdventureGuild_KillList_Bats]"
+            }
+        },
+    )
+    write_json(
+        unpacked_dir / "Strings" / "Locations.json",
+        {"AdventureGuild_KillList_Bats": "Bats"},
+    )
+    write_json(
+        unpacked_dir / "Strings" / "Locations.zh-CN.json",
+        {
+            "AdventureGuild_KillList_Bats": "蝙蝠",
+            "CommunityCenter_AreaName_CraftsRoom": "工艺室",
+        },
+    )
+    merge_json(
+        unpacked_dir / "Strings" / "Locations.json",
+        {"CommunityCenter_AreaName_CraftsRoom": "Crafts Room"},
+    )
+    write_json(
+        unpacked_dir / "Data" / "RandomBundles.json",
+        {"0": {"AreaName": "Crafts Room"}},
+    )
+    write_json(unpacked_dir / "Data" / "Shops.json", {"AdventureShop": {"Items": []}})
+    write_json(unpacked_dir / "Data" / "Characters.json", {"???": {"DisplayName": "???"}})
+    write_json(unpacked_dir / "Characters" / "schedules" / "Abigail.json", {"11": "Town 0 0 2"})
+
+
+def merge_json(path: Path, values: dict[str, object]) -> None:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload.update(values)
+    write_json(path, payload)
 
 
 def object_data(

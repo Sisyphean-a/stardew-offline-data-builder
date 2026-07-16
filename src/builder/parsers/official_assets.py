@@ -8,7 +8,8 @@ from builder.models import DiscoveredJsonFile
 ASSET_TYPE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("villager_gift", ("npcgifttastes", "universalgifts")),
     ("cooking_recipe", ("cookingrecipes", "cookingrecipe")),
-    ("crafting_recipe", ("craftingrecipes", "craftingrecipe", "tailoringrecipes")),
+    ("tailoring_recipe", ("tailoringrecipes", "tailoringrecipe")),
+    ("crafting_recipe", ("craftingrecipes", "craftingrecipe")),
     ("special_order", ("specialorders", "specialorder")),
     ("drop", ("monsterloot", "drops")),
     ("villager", ("characters", "character", "npcdispositions")),

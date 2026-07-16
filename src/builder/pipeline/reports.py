@@ -11,9 +11,13 @@ from builder.utils.json_io import dump_json_file
 def summarize_entities(entities: list[NormalizedEntity]) -> BuildSummary:
     counts = Counter(entity.entity_type for entity in entities)
     missing = sum(1 for entity in entities if entity.translation_status == "missing")
+    not_applicable = sum(
+        1 for entity in entities if entity.translation_status == "not_applicable"
+    )
     return BuildSummary(
         entities=len(entities),
         missing_translations=missing,
+        not_applicable_translations=not_applicable,
         counts_by_type=dict(counts),
     )
 
@@ -47,6 +51,7 @@ def write_build_reports(
             },
             "warnings": {
                 "missingTranslations": summary.missing_translations,
+                "notApplicableTranslations": summary.not_applicable_translations,
                 "unmatched": len(unmatched),
                 "duplicateIds": summary.duplicate_ids,
                 "dataErrors": len(errors),

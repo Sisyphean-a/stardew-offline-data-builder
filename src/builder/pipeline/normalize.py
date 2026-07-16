@@ -4,6 +4,11 @@ from collections import defaultdict
 
 from builder.models import NormalizedEntity, RawEntity
 
+NON_LOCALIZABLE_ENTITY_TYPES = frozenset(
+    {"drop", "npc_schedule", "shop", "tailoring_recipe"}
+)
+NON_LOCALIZABLE_NAMES = frozenset({"???"})
+
 
 def normalize_entities(
     raw_entities: list[RawEntity],
@@ -33,7 +38,8 @@ def build_normalized_entity(
     english = locale_entities(group, "en")
     chinese = locale_entities(group, "zh-CN")
     primary = select_primary(group)
-    name_zh = pick_group_value(chinese, english, "name")
+    chinese_name = pick_group_value(chinese, [], "name")
+    name_zh = chinese_name or pick_group_value(english, [], "name")
     description_zh = pick_group_value(chinese, english, "description")
     extra_json = dict(primary.attributes)
     extra_json["_provenance"] = build_provenance(group)
@@ -47,12 +53,28 @@ def build_normalized_entity(
         description_zh=description_zh,
         description_en=pick_group_value(english, chinese, "description"),
         category=categories.get(entity_id),
-        translation_status="complete" if pick_group_value(chinese, [], "name") else "missing",
+        translation_status=translation_status(primary, chinese_name),
         extra_json=extra_json,
         source_file=primary.source_file,
         aliases=aliases.get(entity_id, []),
         keywords=[categories[entity_id]] if entity_id in categories else [],
     )
+
+
+def translation_status(primary: RawEntity, chinese_name: str | None) -> str:
+    if chinese_name:
+        return "complete"
+    if not requires_translation(primary):
+        return "not_applicable"
+    return "missing"
+
+
+def requires_translation(entity: RawEntity) -> bool:
+    if entity.attributes.get("translationRequired") is False:
+        return False
+    if entity.entity_type in NON_LOCALIZABLE_ENTITY_TYPES:
+        return False
+    return entity.name not in NON_LOCALIZABLE_NAMES
 
 
 def locale_entities(group: list[RawEntity], locale: str) -> list[RawEntity]:

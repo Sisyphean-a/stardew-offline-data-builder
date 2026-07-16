@@ -33,6 +33,7 @@ ENTITY_TYPE_LABELS = {
     "villager_gift": "村民礼物",
     "cooking_recipe": "料理",
     "crafting_recipe": "制作配方",
+    "tailoring_recipe": "裁缝规则",
 }
 
 EXIT_OK = 0

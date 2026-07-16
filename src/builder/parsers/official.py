@@ -70,7 +70,12 @@ def build_mapping_entity(
     attributes = {str(key): item for key, item in value.items()}
     source_id = select_record_id(attributes, fallback_id, discovered.entity_type)
     internal_name = select_internal_name(attributes, discovered.entity_type, source_id)
-    name = first_text(attributes, ("DisplayName", "displayName", "Title", "title", "name"))
+    name = first_text(
+        attributes,
+        ("DisplayName", "displayName", "Title", "title", "Name", "name"),
+    )
+    if discovered.entity_type == "bundle":
+        name = name or optional_text(attributes.get("AreaName"))
     description = first_text(attributes, ("Description", "description", "Text", "text"))
     apply_image_metadata(attributes, discovered.entity_type, internal_name)
     return RawEntity(
@@ -94,8 +99,14 @@ def build_legacy_entity(
 ) -> RawEntity:
     fields = value.split("/")
     internal_name = legacy_internal_name(discovered.entity_type, source_id, fields)
-    name = legacy_display_name(discovered.entity_type, fields, internal_name)
+    explicit_display_name = legacy_recipe_display_name(discovered.entity_type, fields)
+    name = explicit_display_name or legacy_display_name(
+        discovered.entity_type, fields, internal_name
+    )
     attributes: dict[str, Any] = {"legacyFields": fields, "legacyValue": value}
+    if explicit_display_name:
+        attributes["hasExplicitDisplayName"] = True
+    add_recipe_output_metadata(attributes, discovered.entity_type, fields)
     if discovered.entity_type == "crop" and len(fields) > 3:
         attributes["HarvestItemId"] = fields[3]
         source_id = fields[3] or source_id
@@ -106,11 +117,26 @@ def build_legacy_entity(
         source_id=source_id,
         internal_name=internal_name,
         name=name,
-        description=None,
+        description=legacy_description(discovered.entity_type, fields),
         locale=discovered.locale,
         attributes=attributes,
         source_file=str(path),
     )
+
+
+def add_recipe_output_metadata(
+    attributes: dict[str, Any], entity_type: str, fields: list[str]
+) -> None:
+    if entity_type not in {"cooking_recipe", "crafting_recipe"} or len(fields) < 3:
+        return
+    output_parts = fields[2].split()
+    if not output_parts:
+        return
+    attributes["outputItemId"] = output_parts[0]
+    if entity_type == "crafting_recipe" and len(fields) > 3 and fields[3].lower() == "true":
+        attributes["outputEntityType"] = "big_craftable"
+    else:
+        attributes["outputEntityType"] = "object"
 
 
 def build_object_specializations(entity: RawEntity) -> Iterable[RawEntity]:
@@ -185,23 +211,46 @@ def first_text(value: dict[str, object], keys: tuple[str, ...]) -> str | None:
 def select_internal_name(
     value: dict[str, object], entity_type: str, source_id: str
 ) -> str | None:
+    if entity_type == "special_order":
+        return source_id
     if entity_type == "crop":
         return first_text(value, ("SeedName", "Name", "name"))
     return first_text(value, ("InternalName", "Name", "name", "Id", "id")) or source_id
 
 
 def legacy_internal_name(entity_type: str, source_id: str, fields: list[str]) -> str:
-    if entity_type == "fish" and fields and fields[0]:
+    if entity_type in {"fish", "furniture"} and fields and fields[0]:
         return fields[0]
     return source_id
 
 
 def legacy_display_name(entity_type: str, fields: list[str], fallback: str) -> str:
+    if entity_type == "quest" and len(fields) > 1 and fields[1]:
+        return fields[1]
+    if entity_type == "bundle" and fields and fields[-1]:
+        return fields[-1]
     if entity_type == "object" and len(fields) > 4 and fields[4]:
         return fields[4]
+    if entity_type == "furniture" and len(fields) > 7 and fields[7]:
+        return fields[7]
     if entity_type == "fish" and fields and fields[0]:
         return fields[0]
     return fallback
+
+
+def legacy_recipe_display_name(entity_type: str, fields: list[str]) -> str | None:
+    if entity_type not in {"cooking_recipe", "crafting_recipe"}:
+        return None
+    for field in fields:
+        if field.startswith("[LocalizedText "):
+            return field
+    return None
+
+
+def legacy_description(entity_type: str, fields: list[str]) -> str | None:
+    if entity_type == "quest" and len(fields) > 2 and fields[2]:
+        return fields[2]
+    return None
 
 
 def apply_image_metadata(

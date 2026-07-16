@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from builder.models import DiscoveredJsonFile, RawEntity
+from builder.parsers.localization_values import resolve_bundle_area_name
 from builder.utils.json_io import load_json_file
 
 ENTITY_TYPE_KEYWORDS = {
@@ -15,6 +16,7 @@ ENTITY_TYPE_KEYWORDS = {
     "npc_schedule": ("schedule",),
     "cooking_recipe": ("cooking", "recipe-cooking"),
     "crafting_recipe": ("crafting", "recipe-crafting"),
+    "tailoring_recipe": ("tailoring", "recipe-tailoring"),
     "shop": ("shop",),
     "quest": ("quest",),
     "bundle": ("bundle",),
@@ -29,6 +31,7 @@ ENTITY_TYPE_KEYWORDS = {
 }
 
 LOCALIZED_TEXT = re.compile(r"^\[LocalizedText\s+([^:]+):([^\]]+)\]$")
+PLACEHOLDER_TEXT = re.compile(r"^\[([^\[\]]+)\]$")
 LOCALE_SUFFIX = re.compile(r"\.([a-z]{2}-[A-Z]{2})$")
 LOCALIZATION_ASSETS = {
     "object": ("strings/objects", "strings/bigcraftables"),
@@ -42,6 +45,7 @@ LOCALIZATION_ASSETS = {
     "cooking_recipe": ("strings/objects",),
     "crafting_recipe": ("strings/objects",),
 }
+PLACEHOLDER_ASSETS = {"special_order": ("strings/specialorderstrings",)}
 
 
 def classify_localized_json(path: Path, payload: object) -> DiscoveredJsonFile | None:
@@ -178,8 +182,10 @@ def resolve_entity_locale(
     locale: str,
     tables: dict[str, dict[str, dict[str, str]]],
 ) -> RawEntity:
-    name = resolve_source_text(entity.name, entity.locale, locale, tables)
-    description = resolve_source_text(entity.description, entity.locale, locale, tables)
+    name = resolve_source_text(entity.name, entity.locale, entity.entity_type, locale, tables)
+    description = resolve_source_text(
+        entity.description, entity.locale, entity.entity_type, locale, tables
+    )
     fallback_name = lookup_localized_field(entity, "name", locale, tables)
     fallback_description = lookup_localized_field(entity, "description", locale, tables)
     return entity.model_copy(
@@ -194,6 +200,7 @@ def resolve_entity_locale(
 def resolve_source_text(
     value: str | None,
     source_locale: str | None,
+    entity_type: str,
     locale: str,
     tables: dict[str, dict[str, dict[str, str]]],
 ) -> str | None:
@@ -201,6 +208,13 @@ def resolve_source_text(
         return None
     if LOCALIZED_TEXT.match(value):
         return resolve_text(value, locale, tables)
+    placeholder = PLACEHOLDER_TEXT.match(value)
+    if placeholder is not None:
+        return resolve_placeholder_text(entity_type, placeholder.group(1), locale, tables)
+    if entity_type == "bundle":
+        localized = resolve_bundle_area_name(value, source_locale, locale, tables)
+        if localized:
+            return localized
     if source_locale == locale:
         return value
     return None
@@ -218,6 +232,19 @@ def resolve_text(
         return value
     asset, key = match.groups()
     return tables.get(locale, {}).get(normalize_asset_key(asset), {}).get(key)
+
+
+def resolve_placeholder_text(
+    entity_type: str,
+    key: str,
+    locale: str,
+    tables: dict[str, dict[str, dict[str, str]]],
+) -> str | None:
+    for asset in PLACEHOLDER_ASSETS.get(entity_type, ()):
+        value = tables.get(locale, {}).get(asset, {}).get(key)
+        if value:
+            return value
+    return None
 
 
 def lookup_localized_field(
@@ -264,7 +291,7 @@ def localization_asset_key(path: Path, unpacked_dir: Path) -> str:
 
 
 def normalize_asset_key(value: str) -> str:
-    return value.replace("\\", "/").strip("/").lower()
+    return re.sub(r"/+", "/", value.replace("\\", "/")).strip("/").lower()
 
 
 def uses_requested_locale(path: Path) -> bool:
