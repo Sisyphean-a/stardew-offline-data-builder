@@ -31,7 +31,7 @@ ASSET_TYPE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("footwear", ("boots", "boot", "footwear")),
 )
 LOCALE_SUFFIX = re.compile(r"\.([a-z]{2}-[A-Z]{2})$")
-SUPPORTING_ASSETS = {"aquariumfish", "fishponddata"}
+SUPPORTING_ASSETS = {"fishponddata", "locations", "machines"}
 
 
 def classify_official_json(path: Path, payload: object) -> DiscoveredJsonFile | None:
@@ -47,6 +47,10 @@ def classify_official_json(path: Path, payload: object) -> DiscoveredJsonFile | 
     if entity_type is None or not is_supported_asset(payload):
         return None
     return DiscoveredJsonFile(path=str(path), entity_type=entity_type, locale=infer_locale(path))
+
+
+def is_supporting_asset(path: Path) -> bool:
+    return normalized_stem(path) in SUPPORTING_ASSETS
 
 
 def infer_entity_type(path: Path) -> str | None:

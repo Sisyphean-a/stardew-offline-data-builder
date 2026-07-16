@@ -4,7 +4,7 @@ from collections import Counter
 from pathlib import Path
 
 from builder.config import PRIMARY_ENTITY_TYPES
-from builder.models import BuildSummary, NormalizedEntity, UnmatchedRecord
+from builder.models import BuildSummary, NormalizedEntity
 from builder.utils.json_io import dump_json_file
 
 
@@ -25,43 +25,14 @@ def summarize_entities(entities: list[NormalizedEntity]) -> BuildSummary:
 def write_build_reports(
     reports_dir: Path,
     summary: BuildSummary,
-    unmatched: list[UnmatchedRecord],
     missing_translations: list[NormalizedEntity],
     errors: list[dict[str, str]],
     source_discovery: dict[str, list[dict[str, object]]] | None = None,
     coverage: dict[str, object] | None = None,
 ) -> None:
     reports_dir.mkdir(parents=True, exist_ok=True)
-    extra_counts = {
-        entity_type: count
-        for entity_type, count in summary.counts_by_type.items()
-        if entity_type not in PRIMARY_ENTITY_TYPES
-    }
-    dump_json_file(
-        reports_dir / "build-summary.json",
-        {
-            "success": True,
-            "counts": {
-                "entities": summary.entities,
-                "objects": summary.counts_by_type.get("object", 0),
-                "crops": summary.counts_by_type.get("crop", 0),
-                "fish": summary.counts_by_type.get("fish", 0),
-                "villagers": summary.counts_by_type.get("villager", 0),
-                "extraCounts": extra_counts,
-            },
-            "warnings": {
-                "missingTranslations": summary.missing_translations,
-                "notApplicableTranslations": summary.not_applicable_translations,
-                "unmatched": len(unmatched),
-                "duplicateIds": summary.duplicate_ids,
-                "dataErrors": len(errors),
-            },
-        },
-    )
-    dump_json_file(
-        reports_dir / "unmatched.json",
-        [record.model_dump(mode="json") for record in unmatched],
-    )
+    remove_legacy_reports(reports_dir)
+    dump_json_file(reports_dir / "build-summary.json", build_summary_payload(summary, errors))
     dump_json_file(
         reports_dir / "missing-translations.json",
         [
@@ -78,3 +49,38 @@ def write_build_reports(
         dump_json_file(reports_dir / "source-discovery.json", source_discovery)
     if coverage is not None:
         dump_json_file(reports_dir / "coverage.json", coverage)
+
+
+def build_summary_payload(
+    summary: BuildSummary,
+    errors: list[dict[str, str]],
+) -> dict[str, object]:
+    extra_counts = {
+        entity_type: count
+        for entity_type, count in summary.counts_by_type.items()
+        if entity_type not in PRIMARY_ENTITY_TYPES
+    }
+    return {
+        "success": True,
+        "counts": {
+            "entities": summary.entities,
+            "objects": summary.counts_by_type.get("object", 0),
+            "crops": summary.counts_by_type.get("crop", 0),
+            "fish": summary.counts_by_type.get("fish", 0),
+            "villagers": summary.counts_by_type.get("villager", 0),
+            "extraCounts": extra_counts,
+        },
+        "warnings": {
+            "missingTranslations": summary.missing_translations,
+            "notApplicableTranslations": summary.not_applicable_translations,
+            "duplicateIds": summary.duplicate_ids,
+            "dataErrors": len(errors),
+        },
+    }
+
+
+def remove_legacy_reports(reports_dir: Path) -> None:
+    for filename in ("unmatched.json",):
+        path = reports_dir / filename
+        if path.exists():
+            path.unlink()

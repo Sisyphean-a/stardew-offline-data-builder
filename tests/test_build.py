@@ -48,7 +48,7 @@ def test_build_fixture_is_repeatable(tmp_path: Path) -> None:
     assert (output_dir / "stardew.db").exists()
 
 
-def test_build_merges_community_data_and_writes_reports(tmp_path: Path) -> None:
+def test_build_uses_official_data_and_writes_reports(tmp_path: Path) -> None:
     game_dir = tmp_path / "game"
     (game_dir / "Content").mkdir(parents=True)
     (game_dir / "Content (unpacked)").mkdir()
@@ -66,8 +66,6 @@ def test_build_merges_community_data_and_writes_reports(tmp_path: Path) -> None:
             "build",
             "--game-dir",
             str(game_dir),
-            "--community-data",
-            str(Path("tests/fixtures/community-data")),
             "--output",
             str(output_dir),
         ],
@@ -78,7 +76,7 @@ def test_build_merges_community_data_and_writes_reports(tmp_path: Path) -> None:
     reports_dir = output_dir / "reports"
     assert db_path.exists()
     assert (reports_dir / "build-summary.json").exists()
-    assert (reports_dir / "unmatched.json").exists()
+    assert not (reports_dir / "unmatched.json").exists()
 
     connection = sqlite3.connect(db_path)
     row = connection.execute(
@@ -87,10 +85,11 @@ def test_build_merges_community_data_and_writes_reports(tmp_path: Path) -> None:
     connection.close()
 
     extra = json.loads(row[0])
-    assert extra["price"] == 35
-    assert extra["season"] == "spring"
+    assert extra["_provenance"] == {
+        "official": ["Data/Objects.en.json", "Data/Objects.zh-CN.json"]
+    }
     assert row[1] == "images/object-24.webp"
     assert (output_dir / "images" / "object-24.webp").exists()
 
-    unmatched = json.loads((reports_dir / "unmatched.json").read_text(encoding="utf-8"))
-    assert unmatched[0]["source_id"] == "999"
+    coverage = json.loads((reports_dir / "coverage.json").read_text(encoding="utf-8"))
+    assert coverage["official"]["object"] == 1

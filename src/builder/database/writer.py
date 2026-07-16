@@ -19,7 +19,6 @@ def write_database(
     summary: BuildSummary,
     generated_at: str | None = None,
     source_hash: str = "",
-    community_data_version: str = "unknown",
     game_version: str = "unknown",
 ) -> None:
     tmp_path = db_path.with_suffix(db_path.suffix + TEMP_DB_SUFFIX)
@@ -36,7 +35,6 @@ def write_database(
             summary,
             generated_at=created_at,
             source_hash=source_hash,
-            community_data_version=community_data_version,
             game_version=game_version,
         )
         insert_entities(connection, entities, created_at=created_at)
@@ -63,7 +61,6 @@ def insert_meta(
     summary: BuildSummary,
     generated_at: str,
     source_hash: str,
-    community_data_version: str,
     game_version: str,
 ) -> None:
     rows = [
@@ -72,7 +69,6 @@ def insert_meta(
         ("locale", locale),
         ("generated_at", generated_at),
         ("entity_count", str(summary.entities)),
-        ("community_data_version", community_data_version),
         ("game_version", game_version),
         ("source_hash", source_hash),
     ]

@@ -24,6 +24,7 @@ def test_legacy_records_use_official_localized_display_fields(tmp_path: Path) ->
 
 def create_legacy_layout(tmp_path: Path) -> Path:
     unpacked_dir = tmp_path / "Content (unpacked)"
+    add_empty_support_files(unpacked_dir)
     write_json(
         unpacked_dir / "Data" / "Objects.json",
         {
@@ -60,6 +61,18 @@ def create_legacy_layout(tmp_path: Path) -> Path:
         unpacked_dir / "Data" / "Bundles.zh-CN.json",
         {"Pantry/0": "春季作物/24 1 188 1/0///春季作物"},
     )
+    add_legacy_localizations(unpacked_dir)
+    return unpacked_dir
+
+
+def add_empty_support_files(unpacked_dir: Path) -> None:
+    write_json(unpacked_dir / "Data" / "FishPondData.json", [])
+    write_json(unpacked_dir / "Data" / "Locations.json", {})
+    write_json(unpacked_dir / "Data" / "Machines.json", {})
+    write_json(unpacked_dir / "Data" / "Shops.json", {})
+
+
+def add_legacy_localizations(unpacked_dir: Path) -> None:
     write_json(
         unpacked_dir / "Strings" / "Objects.json",
         {
@@ -76,7 +89,6 @@ def create_legacy_layout(tmp_path: Path) -> Path:
             "CraftingRecipe_IronBar": "铁锭转换术",
         },
     )
-    return unpacked_dir
 
 
 def object_data(name: str, text_key: str) -> dict[str, object]:

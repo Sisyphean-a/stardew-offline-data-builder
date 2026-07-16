@@ -72,8 +72,6 @@ def test_inspect_outputs_extra_type_counts(tmp_path: Path) -> None:
             "build",
             "--game-dir",
             str(game_dir),
-            "--community-data",
-            str(Path("tests/fixtures/community-data")),
             "--output",
             str(output_dir),
         ],

@@ -22,15 +22,3 @@ def game_version(game_dir: Path) -> str:
             if isinstance(name, str) and name.startswith("Stardew Valley/"):
                 return name.removeprefix("Stardew Valley/")
     return "unknown"
-
-
-def community_data_version(community_dir: Path | None) -> str:
-    if community_dir is None:
-        return "none"
-    for package_path in (community_dir / "package.json", community_dir.parent / "package.json"):
-        if not package_path.exists():
-            continue
-        payload = load_json_file(package_path)
-        if isinstance(payload, dict) and isinstance(payload.get("version"), str):
-            return payload["version"]
-    return "unknown"

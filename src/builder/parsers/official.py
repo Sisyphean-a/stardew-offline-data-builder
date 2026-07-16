@@ -68,6 +68,8 @@ def build_mapping_entity(
     discovered: DiscoveredJsonFile,
 ) -> RawEntity:
     attributes = {str(key): item for key, item in value.items()}
+    if discovered.entity_type == "crop":
+        attributes["SeedItemId"] = fallback_id
     source_id = select_record_id(attributes, fallback_id, discovered.entity_type)
     internal_name = select_internal_name(attributes, discovered.entity_type, source_id)
     name = first_text(

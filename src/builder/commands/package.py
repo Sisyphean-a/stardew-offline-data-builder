@@ -10,6 +10,7 @@ from builder.config import (
     PACKAGE_BASENAME,
     PRIMARY_ENTITY_TYPES,
     REPORTS_DIRNAME,
+    SCHEMA_VERSION,
 )
 from builder.models import BuildSummary
 from builder.utils.hashing import sha256_file
@@ -35,7 +36,7 @@ def write_manifest(
         manifest_path,
         {
             "format": "stardew-offline-data",
-            "schemaVersion": 1,
+            "schemaVersion": SCHEMA_VERSION,
             "builderVersion": __version__,
             "gameVersion": game_version,
             "language": locale,

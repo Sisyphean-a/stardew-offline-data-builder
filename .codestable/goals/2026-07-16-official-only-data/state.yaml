@@ -1,0 +1,29 @@
+schema_version: 2
+goal: "official-only-data"
+status: complete
+objective: "彻底移除正式构建对 stardew-valley-data 的依赖，以官方游戏数据直接解析和跨表推导替代事实性社区补充字段。"
+start_point: "当前正式构建已可仅用官方数据生成 3688 条实体，但仍保留可选社区 CLI 参数、加载/匹配/合并代码；1123 条实体会从社区源获得便利型 extra_json 字段。"
+acceptance:
+  - "正式 CLI、运行时代码、当前 README 和测试夹具不再要求或接受 stardew-valley-data / community-data。"
+  - "删除社区源加载、匹配、合并及社区版本记录等不再使用的生产代码，不保留旧兼容入口。"
+  - "作物、鱼类、NPC、商店、机器、鱼塘、配方等事实性便利字段由官方解包文件直接解析或跨表推导，来源可追溯。"
+  - "社区原创事件摘要、攻略分类等无官方结构化等价物的数据不伪造，并明确不进入产物。"
+  - "真实官方目录可独立生成 SQLite、图片、报告和 svdata；核心实体、官方中英文、搜索与图片无回归。"
+  - "pytest、ruff、真实黑盒构建和首轮独立代码审查通过；追加复审与独立功能验收可由 owner 明确豁免。"
+non_goals:
+  - "不解析游戏可执行文件或反编译程序集。"
+  - "不保留 community-data CLI 兼容参数。"
+  - "不重写历史 CodeStable 归档中对旧社区流程的事实记录。"
+  - "不新增 GUI、Web 服务或联网下载。"
+budget:
+  kind: none
+  limit: null
+current_iteration: 1
+next_action: "Goal complete."
+blocker_signature: null
+blocker_count: 0
+owner_stop:
+  status: accepted
+  reason: "Owner 于 2026-07-16 明确取消追加代码复审与独立验收。"
+  decision: "保留首轮独立审查和当前验证状态，记录已知问题后完成 Goal。"
+updated_at: "2026-07-16"

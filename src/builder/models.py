@@ -51,23 +51,7 @@ class BuildSummary(BaseModel):
     missing_translations: int
     not_applicable_translations: int = 0
     counts_by_type: dict[str, int] = Field(default_factory=dict)
-    unmatched: int = 0
     duplicate_ids: int = 0
-
-
-class MatchResult(BaseModel):
-    entity_id: str
-    matched_by: str
-
-
-class UnmatchedRecord(BaseModel):
-    source: str
-    entity_type: str
-    source_id: str
-    name: str | None
-    attempted: list[str] = Field(default_factory=list)
-    candidates: list[str] = Field(default_factory=list)
-    reason: str
 
 
 class DiscoveredJsonFile(BaseModel):

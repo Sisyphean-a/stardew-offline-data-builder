@@ -6,7 +6,12 @@ from pathlib import Path
 from builder.models import DiscoveredJsonFile, RawEntity
 from builder.parsers.localization import load_localization_tables, localize_official_entities
 from builder.parsers.official import parse_official_file
-from builder.parsers.official_assets import classify_official_json, uses_requested_locale
+from builder.parsers.official_assets import (
+    classify_official_json,
+    is_supporting_asset,
+    uses_requested_locale,
+)
+from builder.sources.official_support import OfficialSupportData, load_official_support_data
 from builder.utils.json_io import load_json_file
 
 LINKABLE_ENTITY_TYPES = frozenset(
@@ -20,6 +25,7 @@ class GameSourceLoad:
     entities: list[RawEntity] = field(default_factory=list)
     discovered: list[dict[str, object]] = field(default_factory=list)
     errors: list[dict[str, str]] = field(default_factory=list)
+    support: OfficialSupportData = field(default_factory=OfficialSupportData)
 
 
 def discover_game_json_files(unpacked_dir: Path) -> list[DiscoveredJsonFile]:
@@ -33,7 +39,18 @@ def discover_game_json_files(unpacked_dir: Path) -> list[DiscoveredJsonFile]:
 
 
 def load_game_data_from_unpacked_dir(unpacked_dir: Path) -> GameSourceLoad:
-    result = GameSourceLoad()
+    result = GameSourceLoad(support=load_official_support_data(unpacked_dir))
+    return populate_game_source(unpacked_dir, result)
+
+
+def load_raw_entities_from_unpacked_dir(unpacked_dir: Path) -> list[RawEntity]:
+    return populate_game_source(unpacked_dir, GameSourceLoad()).entities
+
+
+def populate_game_source(
+    unpacked_dir: Path,
+    result: GameSourceLoad,
+) -> GameSourceLoad:
     for json_file in game_json_candidates(unpacked_dir):
         load_game_json_file(unpacked_dir, json_file, result)
     result.entities = localize_official_entities(
@@ -42,10 +59,6 @@ def load_game_data_from_unpacked_dir(unpacked_dir: Path) -> GameSourceLoad:
     )
     result.entities = enrich_linked_entities(result.entities)
     return result
-
-
-def load_raw_entities_from_unpacked_dir(unpacked_dir: Path) -> list[RawEntity]:
-    return load_game_data_from_unpacked_dir(unpacked_dir).entities
 
 
 def game_json_candidates(unpacked_dir: Path) -> list[Path]:
@@ -75,7 +88,8 @@ def load_game_json_file(unpacked_dir: Path, path: Path, result: GameSourceLoad) 
 
     discovered = classify_official_json(path, payload)
     if discovered is None:
-        result.discovered.append({"path": relative_path, "status": "unrecognized"})
+        status = "supporting" if is_supporting_asset(path) else "unrecognized"
+        result.discovered.append({"path": relative_path, "status": status})
         return
 
     try:

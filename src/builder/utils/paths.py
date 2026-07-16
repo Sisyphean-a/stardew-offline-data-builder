@@ -34,12 +34,6 @@ def ensure_xnb_hack_path(path: Path) -> Path:
     return path
 
 
-def ensure_community_data_directory(path: Path) -> Path:
-    if not path.exists() or not path.is_dir():
-        raise FileNotFoundError("未找到社区数据目录")
-    return path
-
-
 def default_xnb_hack_path(game_dir: Path) -> Path:
     candidates = [
         game_dir / "StardewXnbHack.exe",

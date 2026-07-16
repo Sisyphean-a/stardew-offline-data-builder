@@ -4,9 +4,8 @@ from pathlib import Path
 
 APP_NAME = "stardew-offline-data-builder"
 DEFAULT_LOCALE = "zh-CN"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEFAULT_FIXTURE_ROOT = Path("tests/fixtures/game-data")
-DEFAULT_COMMUNITY_DATA = Path("tests/fixtures/community-data")
 BUILD_DB_FILENAME = "stardew.db"
 TEMP_DB_SUFFIX = ".tmp"
 MANIFEST_FILENAME = "manifest.json"
