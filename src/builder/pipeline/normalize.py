@@ -13,19 +13,15 @@ def normalize_entities(
     grouped: dict[str, list[RawEntity]] = defaultdict(list)
     for entity in raw_entities:
         grouped[build_entity_id(entity)].append(entity)
-
-    normalized: list[NormalizedEntity] = []
-    for entity_id, group in sorted(grouped.items()):
-        normalized.append(build_normalized_entity(entity_id, group, aliases, categories))
-    return normalized
+    return [
+        build_normalized_entity(entity_id, group, aliases, categories)
+        for entity_id, group in sorted(grouped.items())
+    ]
 
 
 def build_entity_id(entity: RawEntity) -> str:
-    source_id = entity.source_id.strip()
-    internal_name = (entity.internal_name or "").strip()
-    stable = source_id if source_id else internal_name
-    stable = stable.replace(" ", "-")
-    return f"{entity.entity_type}:{stable}"
+    stable = entity.source_id.strip() or (entity.internal_name or "").strip()
+    return f"{entity.entity_type}:{stable.replace(' ', '-')}"
 
 
 def build_normalized_entity(
@@ -34,48 +30,69 @@ def build_normalized_entity(
     aliases: dict[str, list[str]],
     categories: dict[str, str],
 ) -> NormalizedEntity:
-    zh_entity = find_locale(group, "zh-CN")
-    en_entity = find_locale(group, "en")
-    primary = zh_entity or en_entity or group[0]
-    name_zh = pick_value(zh_entity, en_entity, "name")
-    description_zh = pick_value(zh_entity, en_entity, "description")
-    translation_status = "complete" if zh_entity and zh_entity.name else "missing"
+    english = locale_entities(group, "en")
+    chinese = locale_entities(group, "zh-CN")
+    primary = select_primary(group)
+    name_zh = pick_group_value(chinese, english, "name")
+    description_zh = pick_group_value(chinese, english, "description")
+    extra_json = dict(primary.attributes)
+    extra_json["_provenance"] = build_provenance(group)
     return NormalizedEntity(
         id=entity_id,
         entity_type=primary.entity_type,
         game_id=primary.source_id,
-        internal_name=primary.internal_name,
+        internal_name=first_nonempty(group, "internal_name"),
         name_zh=name_zh or "",
-        name_en=pick_value(en_entity, zh_entity, "name"),
+        name_en=pick_group_value(english, chinese, "name"),
         description_zh=description_zh,
-        description_en=pick_value(en_entity, zh_entity, "description"),
+        description_en=pick_group_value(english, chinese, "description"),
         category=categories.get(entity_id),
-        translation_status=translation_status,
-        extra_json=primary.attributes,
+        translation_status="complete" if pick_group_value(chinese, [], "name") else "missing",
+        extra_json=extra_json,
         source_file=primary.source_file,
         aliases=aliases.get(entity_id, []),
         keywords=[categories[entity_id]] if entity_id in categories else [],
     )
 
 
-def find_locale(group: list[RawEntity], locale: str) -> RawEntity | None:
-    for entity in group:
-        if entity.locale == locale:
-            return entity
+def locale_entities(group: list[RawEntity], locale: str) -> list[RawEntity]:
+    return [entity for entity in group if entity.locale == locale]
+
+
+def select_primary(group: list[RawEntity]) -> RawEntity:
+    return max(
+        group,
+        key=lambda entity: (len(entity.attributes), entity.locale == "en", entity.source_file),
+    )
+
+
+def first_nonempty(group: list[RawEntity], field_name: str) -> str | None:
+    for entity in sorted(group, key=lambda item: item.source_file):
+        value = getattr(entity, field_name)
+        if value:
+            return value
     return None
 
 
-def pick_value(
-    primary: RawEntity | None,
-    fallback: RawEntity | None,
-    field_name: str,
+def pick_group_value(
+    primary: list[RawEntity], fallback: list[RawEntity], field_name: str
 ) -> str | None:
-    if primary is not None:
-        value = getattr(primary, field_name)
-        if value:
-            return value
-    if fallback is not None:
-        value = getattr(fallback, field_name)
+    for entity in [*ranked_entities(primary), *ranked_entities(fallback)]:
+        value = getattr(entity, field_name)
         if value:
             return value
     return None
+
+
+def ranked_entities(entities: list[RawEntity]) -> list[RawEntity]:
+    return sorted(entities, key=lambda entity: (-len(entity.attributes), entity.source_file))
+
+
+def build_provenance(group: list[RawEntity]) -> dict[str, list[str]]:
+    provenance: dict[str, list[str]] = {}
+    for entity in group:
+        provenance.setdefault(entity.source, []).append(entity.source_file)
+    return {
+        source: sorted(set(files))
+        for source, files in sorted(provenance.items())
+    }

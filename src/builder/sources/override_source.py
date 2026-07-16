@@ -19,3 +19,15 @@ def load_match_overrides(path: Path) -> dict[str, str]:
     payload = load_json_file(path)
     mappings = dict(payload).get("match_overrides", {})
     return {str(key): str(value) for key, value in dict(mappings).items()}
+
+
+def load_entity_overrides(path: Path) -> dict[str, dict[str, object]]:
+    payload = dict(load_json_file(path))
+    records = payload.get("entity_overrides", {})
+    if not isinstance(records, dict):
+        raise ValueError("entity_overrides 必须是对象")
+    return {
+        str(entity_id): dict(values)
+        for entity_id, values in records.items()
+        if isinstance(values, dict)
+    }

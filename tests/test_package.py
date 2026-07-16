@@ -54,8 +54,10 @@ def test_build_writes_manifest_and_svdata(tmp_path: Path, monkeypatch) -> None:
             "images/object-24.webp",
             "manifest.json",
             "reports/build-summary.json",
+            "reports/coverage.json",
             "reports/errors.json",
             "reports/missing-translations.json",
+            "reports/source-discovery.json",
             "reports/unmatched.json",
             "stardew.db",
         ]

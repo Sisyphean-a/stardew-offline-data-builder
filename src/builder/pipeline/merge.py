@@ -21,8 +21,7 @@ def merge_official_and_community(
             merged.append(official_entity)
             continue
 
-        extra_json = dict(community_match.extra_json)
-        extra_json.update(official_entity.extra_json)
+        extra_json = merge_extra_json(official_entity, community_match)
         aliases = unique_items([*official_entity.aliases, *community_match.aliases])
         keywords = unique_items([*official_entity.keywords, *community_match.keywords])
         merged.append(
@@ -51,3 +50,40 @@ def find_matching_community_entity(
 
 def unique_items(items: list[str]) -> list[str]:
     return list(dict.fromkeys(item for item in items if item))
+
+
+def merge_extra_json(
+    official_entity: NormalizedEntity,
+    community_entity: NormalizedEntity,
+) -> dict[str, object]:
+    extra_json = {
+        key: value
+        for key, value in community_entity.extra_json.items()
+        if key != "_provenance"
+    }
+    extra_json.update(
+        {
+            key: value
+            for key, value in official_entity.extra_json.items()
+            if key != "_provenance"
+        }
+    )
+    provenance = merge_provenance(
+        official_entity.extra_json.get("_provenance"),
+        community_entity.extra_json.get("_provenance"),
+    )
+    extra_json["_provenance"] = provenance
+    return extra_json
+
+
+def merge_provenance(
+    official: object, community: object
+) -> dict[str, list[str]]:
+    merged: dict[str, list[str]] = {}
+    for value in (official, community):
+        if not isinstance(value, dict):
+            continue
+        for source, files in value.items():
+            if isinstance(source, str) and isinstance(files, list):
+                merged.setdefault(source, []).extend(str(item) for item in files)
+    return {source: list(dict.fromkeys(files)) for source, files in sorted(merged.items())}

@@ -5,7 +5,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from builder.config import DEFAULT_COMMUNITY_DATA, EXIT_GAME_DIR, EXIT_UNPACK_TOOL
+from builder.config import EXIT_GAME_DIR, EXIT_UNPACK_TOOL
 from builder.database.validator import sqlite_supports_fts4
 from builder.utils.paths import (
     default_xnb_hack_path,
@@ -39,12 +39,14 @@ def doctor_command(
         console.print(f"✗ {exc}")
         raise typer.Exit(code=EXIT_UNPACK_TOOL) from exc
 
-    community_dir = Path(community_data) if community_data else DEFAULT_COMMUNITY_DATA
-    try:
-        ensure_community_data_directory(community_dir)
-    except FileNotFoundError as exc:
-        console.print(f"✗ {exc}")
-        raise typer.Exit(code=EXIT_GAME_DIR) from exc
+    community_check = "- 未提供社区数据目录（将仅使用官方数据）"
+    if community_data:
+        try:
+            ensure_community_data_directory(Path(community_data))
+        except FileNotFoundError as exc:
+            console.print(f"✗ {exc}")
+            raise typer.Exit(code=EXIT_GAME_DIR) from exc
+        community_check = "✓ 找到社区数据目录"
 
     checks = [
         "✓ Python 环境正常",
@@ -52,7 +54,7 @@ def doctor_command(
         "✓ 找到 Content 目录",
         "✓ 找到 Stardew Valley.dll",
         "✓ 找到 StardewXnbHack",
-        "✓ 找到社区数据目录",
+        community_check,
     ]
     for line in checks:
         console.print(line)

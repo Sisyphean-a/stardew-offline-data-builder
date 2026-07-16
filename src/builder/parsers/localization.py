@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from builder.models import DiscoveredJsonFile, RawEntity
+from builder.utils.json_io import load_json_file
 
 ENTITY_TYPE_KEYWORDS = {
     "object": ("object",),
@@ -24,6 +26,21 @@ ENTITY_TYPE_KEYWORDS = {
     "achievement": ("achievement",),
     "special_order": ("special-order", "specialorder"),
     "ginger_island": ("ginger-island", "gingerisland"),
+}
+
+LOCALIZED_TEXT = re.compile(r"^\[LocalizedText\s+([^:]+):([^\]]+)\]$")
+LOCALE_SUFFIX = re.compile(r"\.([a-z]{2}-[A-Z]{2})$")
+LOCALIZATION_ASSETS = {
+    "object": ("strings/objects", "strings/bigcraftables"),
+    "crop": ("strings/objects",),
+    "fish": ("strings/objects",),
+    "villager": ("strings/npcnames",),
+    "weapon": ("strings/weapons", "strings/objects"),
+    "footwear": ("strings/objects",),
+    "ring": ("strings/objects",),
+    "tool": ("strings/tools", "strings/objects"),
+    "cooking_recipe": ("strings/objects",),
+    "crafting_recipe": ("strings/objects",),
 }
 
 
@@ -50,12 +67,12 @@ def infer_entity_type(path: Path) -> str | None:
     return None
 
 
-def infer_locale(path: Path) -> str | None:
+def infer_locale(path: Path) -> str:
     stem = path.stem
     for locale in ("zh-CN", "en"):
         if locale.lower() in stem.lower():
             return locale
-    return None
+    return "en"
 
 
 def build_raw_entities_from_entries(
@@ -114,3 +131,142 @@ def optional_text(value: object) -> str | None:
 
 def required_entry_keys() -> set[str]:
     return {"id", "internalName", "name", "description"}
+
+
+def load_localization_tables(unpacked_dir: Path) -> dict[str, dict[str, dict[str, str]]]:
+    tables: dict[str, dict[str, dict[str, str]]] = {}
+    strings_dir = unpacked_dir / "Strings"
+    if not strings_dir.exists():
+        return tables
+    for path in sorted(strings_dir.rglob("*.json")):
+        if not uses_requested_locale(path):
+            continue
+        payload = load_json_file(path)
+        if not is_string_table(payload):
+            continue
+        locale = infer_locale(path)
+        tables.setdefault(locale, {})[localization_asset_key(path, unpacked_dir)] = {
+            str(key): str(value) for key, value in payload.items()
+        }
+    return tables
+
+
+def localize_official_entities(
+    entities: list[RawEntity], tables: dict[str, dict[str, dict[str, str]]]
+) -> list[RawEntity]:
+    localized: list[RawEntity] = []
+    for entity in entities:
+        localized.extend(localize_entity(entity, tables))
+    return localized
+
+
+def localize_entity(
+    entity: RawEntity, tables: dict[str, dict[str, dict[str, str]]]
+) -> list[RawEntity]:
+    if entity.locale == "zh-CN":
+        return [resolve_entity_locale(entity, "zh-CN", tables)]
+
+    english = resolve_entity_locale(entity, "en", tables)
+    chinese = resolve_entity_locale(entity, "zh-CN", tables)
+    if chinese.name or chinese.description:
+        return [english, chinese]
+    return [english]
+
+
+def resolve_entity_locale(
+    entity: RawEntity,
+    locale: str,
+    tables: dict[str, dict[str, dict[str, str]]],
+) -> RawEntity:
+    name = resolve_source_text(entity.name, entity.locale, locale, tables)
+    description = resolve_source_text(entity.description, entity.locale, locale, tables)
+    fallback_name = lookup_localized_field(entity, "name", locale, tables)
+    fallback_description = lookup_localized_field(entity, "description", locale, tables)
+    return entity.model_copy(
+        update={
+            "locale": locale,
+            "name": fallback_name or name,
+            "description": fallback_description or description,
+        }
+    )
+
+
+def resolve_source_text(
+    value: str | None,
+    source_locale: str | None,
+    locale: str,
+    tables: dict[str, dict[str, dict[str, str]]],
+) -> str | None:
+    if value is None:
+        return None
+    if LOCALIZED_TEXT.match(value):
+        return resolve_text(value, locale, tables)
+    if source_locale == locale:
+        return value
+    return None
+
+
+def resolve_text(
+    value: str | None,
+    locale: str,
+    tables: dict[str, dict[str, dict[str, str]]],
+) -> str | None:
+    if value is None:
+        return None
+    match = LOCALIZED_TEXT.match(value)
+    if match is None:
+        return value
+    asset, key = match.groups()
+    return tables.get(locale, {}).get(normalize_asset_key(asset), {}).get(key)
+
+
+def lookup_localized_field(
+    entity: RawEntity,
+    field: str,
+    locale: str,
+    tables: dict[str, dict[str, dict[str, str]]],
+) -> str | None:
+    internal_name = entity.internal_name or entity.source_id
+    for asset in LOCALIZATION_ASSETS.get(entity.entity_type, ()):
+        table = tables.get(locale, {}).get(asset, {})
+        for key in localization_keys(entity.entity_type, internal_name, field):
+            value = table.get(key)
+            if value:
+                return value
+    return None
+
+
+def localization_keys(entity_type: str, internal_name: str, field: str) -> tuple[str, ...]:
+    if entity_type == "villager" and field == "name":
+        return (internal_name,)
+    suffix = "Name" if field == "name" else "Description"
+    compact_name = internal_name.replace(" ", "")
+    return (
+        f"{internal_name}_{suffix}",
+        f"{compact_name}_{suffix}",
+        f"{entity_type.title().replace('_', '')}_{compact_name}",
+    )
+
+
+def is_string_table(payload: object) -> bool:
+    return isinstance(payload, dict) and all(isinstance(value, str) for value in payload.values())
+
+
+def localization_asset_key(path: Path, unpacked_dir: Path) -> str:
+    relative = path.relative_to(unpacked_dir)
+    stem = relative.stem
+    for locale in ("zh-CN", "en"):
+        suffix = f".{locale}"
+        if stem.lower().endswith(suffix.lower()):
+            stem = stem[: -len(suffix)]
+            break
+    return normalize_asset_key(str(relative.with_name(stem).with_suffix("")))
+
+
+def normalize_asset_key(value: str) -> str:
+    return value.replace("\\", "/").strip("/").lower()
+
+
+def uses_requested_locale(path: Path) -> bool:
+    match = LOCALE_SUFFIX.search(path.stem)
+    return match is None or match.group(1) in {"en", "zh-CN"}

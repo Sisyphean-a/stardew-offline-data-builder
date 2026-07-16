@@ -3,6 +3,7 @@ from __future__ import annotations
 from builder.models import MatchResult, NormalizedEntity
 from builder.pipeline.match import match_community_entities
 from builder.pipeline.merge import merge_official_and_community
+from builder.pipeline.overrides import apply_entity_overrides
 
 
 def test_match_community_entities_uses_stable_id_and_collects_unmatched() -> None:
@@ -102,3 +103,37 @@ def test_merge_official_and_community_preserves_official_priority() -> None:
     assert merged[0].extra_json["price"] == 35
     assert merged[0].extra_json["quality"] == "official"
     assert merged[0].aliases == ["萝卜", "根茎"]
+
+
+def test_entity_override_has_highest_field_priority() -> None:
+    entity = NormalizedEntity(
+        id="object:24",
+        entity_type="object",
+        game_id="24",
+        internal_name="Parsnip",
+        name_zh="防风草",
+        name_en="Parsnip",
+        description_zh="官方描述",
+        description_en="Official description",
+        category=None,
+        extra_json={"price": 35, "_provenance": {"official": ["Data/Objects.json"]}},
+        source_file="Data/Objects.json",
+    )
+
+    updated, unknown = apply_entity_overrides(
+        [entity],
+        {
+            "object:24": {
+                "name_zh": "人工修正防风草",
+                "extra_json": {"price": 99},
+            },
+            "object:missing": {"name_zh": "不应落库"},
+        },
+    )
+
+    assert updated[0].name_zh == "人工修正防风草"
+    assert updated[0].extra_json["price"] == 99
+    assert updated[0].extra_json["_provenance"]["manual_override"] == [
+        "data/overrides.zh-CN.json"
+    ]
+    assert unknown == ["object:missing"]

@@ -45,15 +45,19 @@ def build_fixture(output: str = typer.Option(".\\dist", help="输出目录。"))
 @app.command("build")
 def build(
     game_dir: str = typer.Option(..., help="游戏目录。"),
-    community_data: str = typer.Option(..., help="社区数据目录。"),
+    community_data: str | None = typer.Option(None, help="可选的社区数据目录。"),
     output: str = typer.Option(".\\dist", help="输出目录。"),
     unpacked_dir: str | None = typer.Option(None, help="已解包目录。"),
+    xnb_hack: str | None = typer.Option(None, help="StardewXnbHack 路径。"),
+    force: bool = typer.Option(False, help="缺少解包数据时强制重新解包。"),
 ) -> None:
     build_command(
         game_dir=game_dir,
         community_data=community_data,
         output=output,
         unpacked_dir=unpacked_dir,
+        xnb_hack=xnb_hack,
+        force=force,
     )
 
 

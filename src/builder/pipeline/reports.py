@@ -24,6 +24,8 @@ def write_build_reports(
     unmatched: list[UnmatchedRecord],
     missing_translations: list[NormalizedEntity],
     errors: list[dict[str, str]],
+    source_discovery: dict[str, list[dict[str, object]]] | None = None,
+    coverage: dict[str, object] | None = None,
 ) -> None:
     reports_dir.mkdir(parents=True, exist_ok=True)
     extra_counts = {
@@ -47,6 +49,7 @@ def write_build_reports(
                 "missingTranslations": summary.missing_translations,
                 "unmatched": len(unmatched),
                 "duplicateIds": summary.duplicate_ids,
+                "dataErrors": len(errors),
             },
         },
     )
@@ -66,3 +69,7 @@ def write_build_reports(
         ],
     )
     dump_json_file(reports_dir / "errors.json", errors)
+    if source_discovery is not None:
+        dump_json_file(reports_dir / "source-discovery.json", source_discovery)
+    if coverage is not None:
+        dump_json_file(reports_dir / "coverage.json", coverage)
