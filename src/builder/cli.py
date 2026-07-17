@@ -44,7 +44,10 @@ def build_fixture(output: str = typer.Option(".\\dist", help="输出目录。"))
 
 @app.command("build")
 def build(
-    game_dir: str = typer.Option(..., help="游戏目录。"),
+    game_dir: str | None = typer.Option(
+        None,
+        help="游戏目录；省略时自动从本机 Steam 发现（仅 Windows）。",
+    ),
     output: str = typer.Option(".\\dist", help="输出目录。"),
     unpacked_dir: str | None = typer.Option(None, help="已解包目录。"),
     xnb_hack: str | None = typer.Option(None, help="StardewXnbHack 路径。"),
@@ -61,7 +64,10 @@ def build(
 
 @app.command("doctor")
 def doctor(
-    game_dir: str | None = typer.Option(None, help="游戏目录。"),
+    game_dir: str | None = typer.Option(
+        None,
+        help="游戏目录；省略时自动从本机 Steam 发现（仅 Windows）。",
+    ),
     xnb_hack: str | None = typer.Option(None, help="StardewXnbHack 路径。"),
 ) -> None:
     doctor_command(game_dir=game_dir, xnb_hack=xnb_hack)
@@ -69,7 +75,10 @@ def doctor(
 
 @app.command("unpack")
 def unpack(
-    game_dir: str = typer.Option(..., help="游戏目录。"),
+    game_dir: str | None = typer.Option(
+        None,
+        help="游戏目录；省略时自动从本机 Steam 发现（仅 Windows）。",
+    ),
     unpacked_dir: str | None = typer.Option(None, help="解包输出目录。"),
     xnb_hack: str | None = typer.Option(None, help="StardewXnbHack 路径。"),
     force: bool = typer.Option(False, help="强制重新解包。"),

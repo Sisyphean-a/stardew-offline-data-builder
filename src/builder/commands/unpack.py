@@ -6,11 +6,11 @@ import typer
 from rich.console import Console
 
 from builder.config import EXIT_GAME_DIR, EXIT_UNPACK_TOOL
+from builder.sources.steam_discovery import resolve_game_directory
 from builder.utils.paths import (
     default_unpacked_dir,
     default_xnb_hack_path,
     ensure_content_directory,
-    ensure_game_directory,
     ensure_json_output,
     ensure_xnb_hack_path,
 )
@@ -20,14 +20,17 @@ console = Console()
 
 
 def unpack_command(
-    game_dir: str,
+    game_dir: str | None,
     unpacked_dir: str | None,
     xnb_hack: str | None,
     force: bool,
 ) -> None:
     try:
+        resolved = resolve_game_directory(Path(game_dir) if game_dir is not None else None)
+        if resolved.origin == "auto":
+            console.print(f"✓ 自动发现游戏目录：{resolved.path}")
         target_dir, skipped = unpack_game_directory(
-            Path(game_dir),
+            resolved.path,
             Path(unpacked_dir) if unpacked_dir else None,
             Path(xnb_hack) if xnb_hack else None,
             force,
@@ -49,15 +52,14 @@ def unpack_game_directory(
     xnb_hack: Path | None,
     force: bool,
 ) -> tuple[Path, bool]:
-    resolved_game_dir = ensure_game_directory(game_dir)
-    ensure_content_directory(resolved_game_dir)
-    xnb_path = ensure_xnb_hack_path(xnb_hack or default_xnb_hack_path(resolved_game_dir))
-    target_dir = unpacked_dir or default_unpacked_dir(resolved_game_dir)
+    ensure_content_directory(game_dir)
+    xnb_path = ensure_xnb_hack_path(xnb_hack or default_xnb_hack_path(game_dir))
+    target_dir = unpacked_dir or default_unpacked_dir(game_dir)
     if target_dir.exists() and any(target_dir.rglob("*.json")) and not force:
         return target_dir, True
 
     target_dir.mkdir(parents=True, exist_ok=True)
-    result = run_external_command(xnb_path, ["--clean"], cwd=resolved_game_dir)
+    result = run_external_command(xnb_path, ["--clean"], cwd=game_dir)
     if result.returncode != 0:
         details = "\n".join(part for part in (result.stdout, result.stderr) if part)
         raise RuntimeError(f"解包失败\n{details}".rstrip())

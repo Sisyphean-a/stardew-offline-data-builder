@@ -7,13 +7,22 @@
 
 ## 使用
 
+在 Windows 上，`build`、`unpack` 和 `doctor` 省略 `--game-dir` 时会从本机 Steam 注册表与
+已配置库中查找唯一有效的《星露谷物语》安装。找到多个或未找到时会显式报错，请传入
+`--game-dir` 指定目录；显式路径始终优先。
+
 ```powershell
-python -m builder doctor `
-  --game-dir "D:\SteamLibrary\steamapps\common\Stardew Valley"
+python -m builder doctor
 
 python -m builder build `
-  --game-dir "D:\SteamLibrary\steamapps\common\Stardew Valley" `
   --output ".\dist"
+```
+
+多安装、非 Steam 安装或自动发现失败时，三个命令都可显式指定正版游戏目录：
+
+```powershell
+python -m builder unpack `
+  --game-dir "D:\SteamLibrary\steamapps\common\Stardew Valley"
 ```
 
 默认读取 `<game-dir>/Content (unpacked)`。若目录不存在有效 JSON，则调用游戏目录中的

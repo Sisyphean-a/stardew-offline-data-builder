@@ -7,10 +7,10 @@ from rich.console import Console
 
 from builder.config import EXIT_GAME_DIR, EXIT_UNPACK_TOOL
 from builder.database.validator import sqlite_supports_fts4
+from builder.sources.steam_discovery import resolve_game_directory
 from builder.utils.paths import (
     default_xnb_hack_path,
     ensure_content_directory,
-    ensure_game_directory,
     ensure_game_dll,
     ensure_xnb_hack_path,
 )
@@ -23,12 +23,15 @@ def doctor_command(
     xnb_hack: str | None,
 ) -> None:
     try:
-        resolved_game_dir = ensure_game_directory(Path(game_dir) if game_dir else None)
+        resolved = resolve_game_directory(Path(game_dir) if game_dir is not None else None)
+        resolved_game_dir = resolved.path
         ensure_content_directory(resolved_game_dir)
         ensure_game_dll(resolved_game_dir)
     except FileNotFoundError as exc:
         console.print(f"✗ {exc}")
         raise typer.Exit(code=EXIT_GAME_DIR) from exc
+    if resolved.origin == "auto":
+        console.print(f"✓ 自动发现游戏目录：{resolved_game_dir}")
 
     xnb_candidate = Path(xnb_hack) if xnb_hack else default_xnb_hack_path(resolved_game_dir)
     try:

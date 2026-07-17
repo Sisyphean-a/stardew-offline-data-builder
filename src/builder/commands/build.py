@@ -30,10 +30,10 @@ from builder.sources.override_source import (
     load_categories,
     load_entity_overrides,
 )
+from builder.sources.steam_discovery import resolve_game_directory
 from builder.utils.hashing import sha256_paths
 from builder.utils.paths import (
     ensure_directory,
-    ensure_game_directory,
     ensure_json_output,
 )
 from builder.utils.time import current_utc_iso
@@ -68,15 +68,17 @@ def build_fixture_command(output: str) -> None:
 
 
 def build_command(
-    game_dir: str,
+    game_dir: str | None,
     output: str,
     unpacked_dir: str | None,
     xnb_hack: str | None = None,
     force: bool = False,
 ) -> None:
-    resolved_game_dir, resolved_unpacked_dir = resolve_build_inputs(
+    resolved_game_dir, resolved_unpacked_dir, origin = resolve_build_inputs(
         game_dir, unpacked_dir, xnb_hack, force
     )
+    if origin == "auto":
+        console.print(f"✓ 自动发现游戏目录：{resolved_game_dir}")
     official = load_game_data_from_unpacked_dir(resolved_unpacked_dir)
     assert_primary_official_entities(official)
     output_dir = ensure_directory(Path(output))
@@ -105,13 +107,14 @@ def build_command(
 
 
 def resolve_build_inputs(
-    game_dir: str,
+    game_dir: str | None,
     unpacked_dir: str | None,
     xnb_hack: str | None,
     force: bool,
-) -> tuple[Path, Path]:
+) -> tuple[Path, Path, str]:
     try:
-        resolved_game_dir = ensure_game_directory(Path(game_dir))
+        resolved = resolve_game_directory(Path(game_dir) if game_dir is not None else None)
+        resolved_game_dir = resolved.path
         resolved_unpacked_dir = resolve_unpacked_dir(
             resolved_game_dir,
             Path(unpacked_dir) if unpacked_dir else None,
@@ -121,7 +124,7 @@ def resolve_build_inputs(
     except (FileNotFoundError, RuntimeError) as exc:
         console.print(f"✗ {exc}")
         raise typer.Exit(code=EXIT_GAME_DIR) from exc
-    return resolved_game_dir, resolved_unpacked_dir
+    return resolved_game_dir, resolved_unpacked_dir, resolved.origin
 
 
 def resolve_unpacked_dir(

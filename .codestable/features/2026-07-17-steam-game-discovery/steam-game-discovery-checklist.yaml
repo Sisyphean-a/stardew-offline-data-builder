@@ -1,0 +1,50 @@
+feature: 2026-07-17-steam-game-discovery
+created: 2026-07-17
+
+steps:
+  - action: "本地发现骨架：枚举并校验 Windows Steam 根、库目录与受 KeyValues 语法、路径和文件类型边界约束的目标应用 manifest，产出稳定有效候选"
+    exit_signal: "默认库、多库、根/VDF 路径错误、注册表错误、错误文件类型和错误/逃逸 manifest 均仅返回严格自动候选，且结果排序去重"
+    status: done
+  - action: "目录解析编排：实现显式路径优先、唯一候选通过与零/多候选显式失败，并携带路径来源"
+    exit_signal: "显式兼容、唯一严格候选、零候选和多候选输入都返回预期路径来源或可操作的 FileNotFoundError"
+    status: done
+  - action: "命令接入：让 build、unpack、doctor 各解析一次可选游戏目录，并同步三个帮助与 README"
+    exit_signal: "三个命令自动发现时均恰好输出一次目录审计行，低层解包函数不发现不打印，三个帮助均不将 --game-dir 标为必填，已有显式路径调用保持可用"
+    status: done
+  - action: "回归证据：覆盖发现边界和 CLI 行为并运行全量质量检查"
+    exit_signal: "所有核心验收场景有自动化证据，pytest 与 Ruff 均通过"
+    status: done
+
+checks:
+  - item: "候选目录必须由已验证根/库、app id、受 KeyValues 语法与边界约束的 installdir、库内 common 路径及 VDF/ACF/目录/Content/DLL 文件类型共同确认"
+    source: 名词契约
+    status: passed
+  - item: "显式 --game-dir 优先，省略时仅接受唯一候选"
+    source: 编排骨架
+    status: passed
+  - item: "发现过程只读、稳定排序去重，零/多候选不静默选择"
+    source: 流程级约束
+    status: passed
+  - item: "build、unpack、doctor 均为可卸载的自动发现挂载点"
+    source: 挂载点
+    status: passed
+  - item: "不联网、不下载、不扫描任意磁盘、不移除显式路径能力"
+    source: 范围守护
+    status: passed
+  - item: "默认库、附加库、显式优先、零候选、多候选、根/VDF 路径错误、损坏语法或 manifest、所有关键路径的错误文件类型、自动发现审计输出和三个 CLI 帮助均有可观察结果"
+    source: 验收场景
+    status: passed
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "python -m pytest -q"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "python -m ruff check src tests"
+      core: true
+      failure_handling: fix-or-block
+  evidence_required: [command_output, diff_summary]
+  cleanliness:
+    debug_output: forbidden

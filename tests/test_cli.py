@@ -4,6 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from builder.cli import app
@@ -35,3 +36,13 @@ def test_build_help_exposes_only_official_inputs() -> None:
     assert "--game-dir" in result.stdout
     assert "--unpacked-dir" in result.stdout
     assert "--community-data" not in result.stdout
+
+
+@pytest.mark.parametrize("command", ["build", "unpack", "doctor"])
+def test_commands_describe_optional_steam_game_discovery(command: str) -> None:
+    result = runner.invoke(app, [command, "--help"])
+
+    assert result.exit_code == 0
+    assert "[required]" not in result.stdout
+    assert "Steam" in result.stdout
+    assert "Windows" in result.stdout

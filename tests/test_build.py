@@ -5,9 +5,13 @@ import shutil
 import sqlite3
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from builder.cli import app
+from builder.commands import build as build_module
+from builder.sources import steam_discovery
+from builder.sources.steam_discovery import ResolvedGameDirectory
 
 runner = CliRunner()
 
@@ -48,11 +52,19 @@ def test_build_fixture_is_repeatable(tmp_path: Path) -> None:
     assert (output_dir / "stardew.db").exists()
 
 
-def test_build_uses_official_data_and_writes_reports(tmp_path: Path) -> None:
+def test_build_uses_official_data_and_writes_reports(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     game_dir = tmp_path / "game"
     (game_dir / "Content").mkdir(parents=True)
     (game_dir / "Content (unpacked)").mkdir()
     (game_dir / "Stardew Valley.dll").write_text("", encoding="utf-8")
+    monkeypatch.setattr(
+        steam_discovery,
+        "discover_installed_stardew_game_directories",
+        lambda: pytest.fail("不应探测 Steam"),
+    )
     shutil.copytree(
         Path("tests/fixtures/game-data/Content (unpacked)"),
         game_dir / "Content (unpacked)",
@@ -93,3 +105,56 @@ def test_build_uses_official_data_and_writes_reports(tmp_path: Path) -> None:
 
     coverage = json.loads((reports_dir / "coverage.json").read_text(encoding="utf-8"))
     assert coverage["official"]["object"] == 1
+    assert "自动发现游戏目录" not in result.stdout
+
+
+def test_build_uses_automatic_game_directory_once(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    game_dir = tmp_path / "game"
+    (game_dir / "Content").mkdir(parents=True)
+    (game_dir / "Content (unpacked)").mkdir()
+    (game_dir / "Stardew Valley.dll").write_text("", encoding="utf-8")
+    shutil.copytree(
+        Path("tests/fixtures/game-data/Content (unpacked)"),
+        game_dir / "Content (unpacked)",
+        dirs_exist_ok=True,
+    )
+    monkeypatch.setattr(
+        build_module,
+        "resolve_game_directory",
+        lambda _: ResolvedGameDirectory(path=game_dir, origin="auto"),
+        raising=False,
+    )
+
+    result = runner.invoke(app, ["build", "--output", str(tmp_path / "output")])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.count("自动发现游戏目录") == 1
+
+
+def test_build_treats_empty_game_dir_as_explicit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    game_dir = tmp_path / "game"
+    (game_dir / "Content").mkdir(parents=True)
+    (game_dir / "Content (unpacked)").mkdir()
+    (game_dir / "Stardew Valley.dll").write_text("", encoding="utf-8")
+    shutil.copytree(
+        Path("tests/fixtures/game-data/Content (unpacked)"),
+        game_dir / "Content (unpacked)",
+        dirs_exist_ok=True,
+    )
+    received: list[Path | None] = []
+
+    def resolve(game_dir_arg: Path | None) -> ResolvedGameDirectory:
+        received.append(game_dir_arg)
+        return ResolvedGameDirectory(path=game_dir, origin="explicit")
+
+    monkeypatch.setattr(build_module, "resolve_game_directory", resolve)
+    result = runner.invoke(app, ["build", "--game-dir", "", "--output", str(tmp_path / "output")])
+
+    assert result.exit_code == 0, result.output
+    assert received == [Path("")]
