@@ -10,8 +10,7 @@ from builder.commands.doctor import doctor_command
 from builder.commands.inspect import inspect_command
 from builder.commands.package import package_existing_output
 from builder.commands.unpack import unpack_command
-from builder.database.writer import inspect_database
-from builder.models import BuildSummary
+from builder.config import EXIT_PACKAGE
 from builder.utils.console import configure_stdio
 
 app = typer.Typer(
@@ -38,7 +37,9 @@ def main(
 
 
 @app.command("build-fixture")
-def build_fixture(output: str = typer.Option(".\\dist", help="输出目录。")) -> None:
+def build_fixture(
+    output: str = typer.Option(".\\dist", help="输出目录；仅供开发验证，不能打包。"),
+) -> None:
     build_fixture_command(output)
 
 
@@ -97,15 +98,8 @@ def package(
     locale: str = typer.Option("zh-CN", help="语言。"),
 ) -> None:
     output_dir = Path(output)
-    inspected = inspect_database(output_dir / "stardew.db")
-    summary = BuildSummary(
-        entities=int(inspected["entities"]),
-        missing_translations=int(inspected["missing_translations"]),
-        counts_by_type={
-            "object": int(inspected["objects"]),
-            "crop": int(inspected["crops"]),
-            "fish": int(inspected["fish"]),
-            "villager": int(inspected["villagers"]),
-        },
-    )
-    package_existing_output(output_dir=output_dir, locale=locale, summary=summary)
+    try:
+        package_existing_output(output_dir=output_dir, locale=locale)
+    except (OSError, ValueError) as exc:
+        typer.echo(f"✗ {exc}")
+        raise typer.Exit(code=EXIT_PACKAGE) from exc

@@ -20,6 +20,11 @@ def test_legacy_records_use_official_localized_display_fields(tmp_path: Path) ->
     assert by_id["quest:1"].name_zh == "会见法师"
     assert by_id["quest:1"].description_zh == "去拜访法师。"
     assert by_id["bundle:Pantry/0"].name_zh == "春季作物"
+    assert by_id["achievement:0"].name_zh == "新手"
+    assert by_id["achievement:0"].description_zh == "赚取 15,000 金。"
+    assert by_id["footwear:504"].internal_name == "Sneakers"
+    assert by_id["footwear:504"].name_zh == "运动鞋"
+    assert by_id["footwear:504"].description_zh == "有点单薄。"
 
 
 def create_legacy_layout(tmp_path: Path) -> Path:
@@ -60,6 +65,22 @@ def create_legacy_layout(tmp_path: Path) -> Path:
     write_json(
         unpacked_dir / "Data" / "Bundles.zh-CN.json",
         {"Pantry/0": "春季作物/24 1 188 1/0///春季作物"},
+    )
+    write_json(
+        unpacked_dir / "Data" / "Achievements.json",
+        {"0": "Greenhorn^Earn 15,000g.^true^-1^18"},
+    )
+    write_json(
+        unpacked_dir / "Data" / "Achievements.zh-CN.json",
+        {"0": "新手^赚取 15,000 金。^true^-1^18"},
+    )
+    write_json(
+        unpacked_dir / "Data" / "Boots.json",
+        {"504": "Sneakers/A little flimsy./50/1/0/0/Sneakers"},
+    )
+    write_json(
+        unpacked_dir / "Data" / "Boots.zh-CN.json",
+        {"504": "Sneakers/有点单薄。/50/1/0/0/运动鞋"},
     )
     add_legacy_localizations(unpacked_dir)
     return unpacked_dir

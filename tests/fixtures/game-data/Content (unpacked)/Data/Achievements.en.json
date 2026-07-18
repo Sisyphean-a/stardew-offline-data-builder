@@ -1,0 +1,12 @@
+{
+  "entityType": "achievement",
+  "locale": "en",
+  "entries": [
+    {
+      "id": "0",
+      "internalName": "Greenhorn",
+      "name": "Greenhorn",
+      "description": "Earn 15,000g."
+    }
+  ]
+}

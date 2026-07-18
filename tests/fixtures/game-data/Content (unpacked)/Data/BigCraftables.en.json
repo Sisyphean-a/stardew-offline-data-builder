@@ -1,0 +1,12 @@
+{
+  "entityType": "big_craftable",
+  "locale": "en",
+  "entries": [
+    {
+      "id": "0",
+      "internalName": "Keg",
+      "name": "Keg",
+      "description": "A keg."
+    }
+  ]
+}

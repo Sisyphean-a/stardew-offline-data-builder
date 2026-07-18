@@ -1,0 +1,12 @@
+{
+  "entityType": "furniture",
+  "locale": "zh-CN",
+  "entries": [
+    {
+      "id": "0",
+      "internalName": "OakChair",
+      "name": "橡木椅",
+      "description": "一把椅子。"
+    }
+  ]
+}

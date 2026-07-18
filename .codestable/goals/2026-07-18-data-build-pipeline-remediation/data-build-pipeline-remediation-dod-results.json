@@ -1,0 +1,13 @@
+{
+  "goal": "data-build-pipeline-remediation",
+  "status": "passed",
+  "acceptance": [
+    {"criterion": "finding_01_to_06_regressions", "status": "passed"},
+    {"criterion": "displayable_translation_quality", "status": "passed"},
+    {"criterion": "auditable_required_images", "status": "passed"},
+    {"criterion": "consistent_release_quality", "status": "passed"},
+    {"criterion": "type_metadata_and_standalone_package", "status": "passed"},
+    {"criterion": "historical_claim_correction", "status": "passed"},
+    {"criterion": "independent_review_and_task_acceptance", "status": "passed"}
+  ]
+}

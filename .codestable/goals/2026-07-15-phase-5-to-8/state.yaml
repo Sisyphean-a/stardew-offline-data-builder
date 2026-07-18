@@ -1,6 +1,10 @@
 schema_version: 1
 goal: "phase-5-to-8"
 status: complete
+release_certification:
+  status: superseded
+  correction: "2026-07-18-data-build-pipeline-remediation/completion-claim-correction.md"
+  reason: "后续真实资产审计确认该完成状态不足以证明可发布质量。"
 objective: "完成阶段 5 到阶段 8：社区数据合并、.svdata 打包、扩展完整数据、图片处理。"
 start_point: "阶段 1 到阶段 4 已完成，当前可基于 fixture 解析四类官方中文数据、执行 doctor/unpack、写入 SQLite。"
 acceptance:

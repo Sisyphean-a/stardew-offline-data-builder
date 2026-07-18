@@ -1,0 +1,12 @@
+{
+  "entityType": "big_craftable",
+  "locale": "zh-CN",
+  "entries": [
+    {
+      "id": "0",
+      "internalName": "Keg",
+      "name": "小桶",
+      "description": "一个小桶。"
+    }
+  ]
+}

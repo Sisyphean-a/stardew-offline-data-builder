@@ -1,0 +1,12 @@
+{
+  "entityType": "footwear",
+  "locale": "en",
+  "entries": [
+    {
+      "id": "504",
+      "internalName": "Sneakers",
+      "name": "Sneakers",
+      "description": "A little flimsy."
+    }
+  ]
+}

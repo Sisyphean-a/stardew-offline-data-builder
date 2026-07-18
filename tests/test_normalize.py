@@ -22,6 +22,10 @@ def test_normalize_fixture_entities() -> None:
         "crop:kale-seeds",
         "fish:sturgeon",
         "villager:Abigail",
+        "achievement:0",
+        "big_craftable:0",
+        "footwear:504",
+        "furniture:0",
     }
 
     object_entity = next(entity for entity in entities if entity.id == "object:24")

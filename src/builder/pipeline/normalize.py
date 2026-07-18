@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 
 from builder.models import NormalizedEntity, RawEntity
@@ -62,11 +63,15 @@ def build_normalized_entity(
 
 
 def translation_status(primary: RawEntity, chinese_name: str | None) -> str:
-    if chinese_name:
-        return "complete"
     if not requires_translation(primary):
         return "not_applicable"
-    return "missing"
+    if not chinese_name or not chinese_name.strip():
+        return "missing"
+    return "complete" if is_displayable_translation(chinese_name) else "invalid"
+
+
+def is_displayable_translation(name: str) -> bool:
+    return not bool(re.fullmatch(r"\d+", name.strip()))
 
 
 def requires_translation(entity: RawEntity) -> bool:

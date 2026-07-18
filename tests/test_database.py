@@ -8,6 +8,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from builder.cli import app
+from tests.complete_fixture import add_required_entity_baseline
 
 runner = CliRunner()
 
@@ -19,11 +20,15 @@ def test_inspect_outputs_summary(tmp_path: Path) -> None:
 
     assert build.exit_code == 0
     assert inspect.exit_code == 0
-    assert "实体总数：4" in inspect.stdout
+    assert "实体总数：8" in inspect.stdout
     assert "物品：1" in inspect.stdout
     assert "作物：1" in inspect.stdout
     assert "鱼类：1" in inspect.stdout
     assert "村民：1" in inspect.stdout
+    assert "成就：1" in inspect.stdout
+    assert "大型可制作物：1" in inspect.stdout
+    assert "鞋类：1" in inspect.stdout
+    assert "家具：1" in inspect.stdout
 
 
 def test_database_contains_aliases(tmp_path: Path) -> None:
@@ -51,6 +56,7 @@ def test_inspect_outputs_extra_type_counts(tmp_path: Path) -> None:
         game_dir / "Content (unpacked)",
         dirs_exist_ok=True,
     )
+    add_required_entity_baseline(game_dir / "Content (unpacked)")
     extra_payload = {
         "entries": [
             {
@@ -80,4 +86,4 @@ def test_inspect_outputs_extra_type_counts(tmp_path: Path) -> None:
 
     assert build.exit_code == 0
     assert inspect.exit_code == 0
-    assert "武器：1" in inspect.stdout
+    assert "武器：2" in inspect.stdout

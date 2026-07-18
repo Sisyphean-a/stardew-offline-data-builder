@@ -1,0 +1,12 @@
+{
+  "entityType": "furniture",
+  "locale": "en",
+  "entries": [
+    {
+      "id": "0",
+      "internalName": "OakChair",
+      "name": "Oak Chair",
+      "description": "A chair."
+    }
+  ]
+}

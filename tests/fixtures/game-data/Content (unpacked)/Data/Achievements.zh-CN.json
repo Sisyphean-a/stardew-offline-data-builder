@@ -1,0 +1,12 @@
+{
+  "entityType": "achievement",
+  "locale": "zh-CN",
+  "entries": [
+    {
+      "id": "0",
+      "internalName": "Greenhorn",
+      "name": "新手",
+      "description": "赚取 15,000 金。"
+    }
+  ]
+}

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
+from builder.pipeline.images import crop_image
 from builder.utils.images import (
     create_thumbnail,
     crop_transparent_bounds,
@@ -37,6 +39,13 @@ def test_create_thumbnail_keeps_aspect_ratio() -> None:
     thumbnail = create_thumbnail(image, max_size=(20, 20))
 
     assert thumbnail.size == (20, 10)
+
+
+def test_crop_image_rejects_out_of_bounds_rectangles() -> None:
+    image = Image.new("RGBA", (8, 8), (255, 255, 255, 255))
+
+    with pytest.raises(ValueError, match="超出源图边界"):
+        crop_image(image, (0, 0, 9, 8))
 
 
 def test_save_lossless_webp_writes_output(tmp_path: Path) -> None:

@@ -143,9 +143,9 @@ def enrich_linked_entity(
     if item is None:
         return entity
     attributes = dict(entity.attributes)
-    for key in ("imageSource", "spriteIndex", "imageRect", "imageMode"):
-        if key not in attributes and key in item.attributes:
-            attributes[key] = item.attributes[key]
+    for key, value in item.attributes.items():
+        if is_image_attribute(key) and key not in attributes:
+            attributes[key] = value
     return entity.model_copy(
         update={
             "internal_name": entity.internal_name or item.internal_name,
@@ -154,6 +154,10 @@ def enrich_linked_entity(
             "attributes": attributes,
         }
     )
+
+
+def is_image_attribute(key: str) -> bool:
+    return key == "spriteIndex" or key.startswith("image")
 
 
 def linked_item(

@@ -12,6 +12,7 @@ from builder.cli import app
 from builder.commands import build as build_module
 from builder.sources import steam_discovery
 from builder.sources.steam_discovery import ResolvedGameDirectory
+from tests.complete_fixture import add_required_entity_baseline
 
 runner = CliRunner()
 
@@ -70,6 +71,7 @@ def test_build_uses_official_data_and_writes_reports(
         game_dir / "Content (unpacked)",
         dirs_exist_ok=True,
     )
+    add_required_entity_baseline(game_dir / "Content (unpacked)")
     output_dir = tmp_path / "build-output"
 
     result = runner.invoke(
@@ -121,6 +123,7 @@ def test_build_uses_automatic_game_directory_once(
         game_dir / "Content (unpacked)",
         dirs_exist_ok=True,
     )
+    add_required_entity_baseline(game_dir / "Content (unpacked)")
     monkeypatch.setattr(
         build_module,
         "resolve_game_directory",
@@ -147,6 +150,7 @@ def test_build_treats_empty_game_dir_as_explicit(
         game_dir / "Content (unpacked)",
         dirs_exist_ok=True,
     )
+    add_required_entity_baseline(game_dir / "Content (unpacked)")
     received: list[Path | None] = []
 
     def resolve(game_dir_arg: Path | None) -> ResolvedGameDirectory:

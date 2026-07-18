@@ -7,6 +7,8 @@ updated_at: "2026-07-15"
 
 # 功能验收
 
+> **2026-07-18 发布勘误**：此历史 `pass` 不再作为当前数据包发布认证；原因和修复验证见 [当前勘误](../2026-07-18-data-build-pipeline-remediation/completion-claim-correction.md)。
+
 ## Reviewer
 
 - 只读功能验收代理

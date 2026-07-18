@@ -6,6 +6,8 @@ status: complete
 
 # 官方数据独立构建
 
+> **2026-07-18 发布勘误**：本记录的 `complete` 不再构成数据包发布认证。后续真实资产审计发现旧格式、图片和质量门禁缺陷；见 [当前勘误](../2026-07-18-data-build-pipeline-remediation/completion-claim-correction.md)。
+
 ## 目标
 
 彻底移除正式构建对 `stardew-valley-data` 的依赖。游戏事实只来自用户本机的官方解包资产，

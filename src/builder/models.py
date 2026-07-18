@@ -50,6 +50,8 @@ class BuildSummary(BaseModel):
     entities: int
     missing_translations: int
     not_applicable_translations: int = 0
+    invalid_translations: int = 0
+    data_errors: int = 0
     counts_by_type: dict[str, int] = Field(default_factory=dict)
     duplicate_ids: int = 0
 

@@ -1,6 +1,10 @@
 schema_version: 1
 goal: "real-official-data-pipeline"
 status: complete
+release_certification:
+  status: superseded
+  correction: "2026-07-18-data-build-pipeline-remediation/completion-claim-correction.md"
+  reason: "后续真实资产审计确认该完成状态不足以证明可发布质量。"
 objective: "以真实《星露谷物语》官方解包数据为主数据源，完成可从用户游戏目录构建 SQLite、.svdata、报告和图片产物的正式流程。"
 start_point: "现有流程能解析测试夹具和通用 JSON，但没有针对真实官方结构的稳定识别、完整类型覆盖和真实路径验收。"
 acceptance:

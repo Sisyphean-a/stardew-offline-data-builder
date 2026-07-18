@@ -8,6 +8,10 @@ import orjson
 from builder import __version__
 from builder.config import SCHEMA_VERSION, TEMP_DB_SUFFIX
 from builder.models import BuildSummary, NormalizedEntity, SearchDocument
+from builder.pipeline.artifact_metadata import (
+    ARTIFACT_METADATA_KEY,
+    build_artifact_metadata,
+)
 from builder.utils.time import current_utc_iso
 
 
@@ -20,6 +24,7 @@ def write_database(
     generated_at: str | None = None,
     source_hash: str = "",
     game_version: str = "unknown",
+    artifact_metadata: dict[str, object] | None = None,
 ) -> None:
     tmp_path = db_path.with_suffix(db_path.suffix + TEMP_DB_SUFFIX)
     if tmp_path.exists():
@@ -29,6 +34,13 @@ def write_database(
     try:
         create_schema(connection)
         created_at = generated_at or current_utc_iso()
+        metadata = artifact_metadata or build_artifact_metadata(
+            summary=summary,
+            locale=locale,
+            generated_at=created_at,
+            source_hash=source_hash,
+            game_version=game_version,
+        )
         insert_meta(
             connection,
             locale,
@@ -36,6 +48,7 @@ def write_database(
             generated_at=created_at,
             source_hash=source_hash,
             game_version=game_version,
+            artifact_metadata=metadata,
         )
         insert_entities(connection, entities, created_at=created_at)
         insert_aliases(connection, entities)
@@ -62,6 +75,7 @@ def insert_meta(
     generated_at: str,
     source_hash: str,
     game_version: str,
+    artifact_metadata: dict[str, object],
 ) -> None:
     rows = [
         ("schema_version", str(SCHEMA_VERSION)),
@@ -71,6 +85,7 @@ def insert_meta(
         ("entity_count", str(summary.entities)),
         ("game_version", game_version),
         ("source_hash", source_hash),
+        (ARTIFACT_METADATA_KEY, orjson.dumps(artifact_metadata).decode("utf-8")),
     ]
     connection.executemany("INSERT INTO build_meta(key, value) VALUES (?, ?)", rows)
 
@@ -195,6 +210,25 @@ def inspect_database(db_path: Path) -> dict[str, str | int]:
     }
     connection.close()
     return summary
+
+
+def read_artifact_metadata(db_path: Path) -> dict[str, object]:
+    if not db_path.is_file():
+        raise FileNotFoundError(f"找不到数据库：{db_path}")
+    connection = sqlite3.connect(db_path)
+    try:
+        raw_metadata = lookup_meta(connection, ARTIFACT_METADATA_KEY)
+    finally:
+        connection.close()
+    if not raw_metadata:
+        raise ValueError("数据库缺少可打包的构建元数据，请重新构建")
+    try:
+        metadata = orjson.loads(raw_metadata)
+    except orjson.JSONDecodeError as exc:
+        raise ValueError("数据库构建元数据损坏，请重新构建") from exc
+    if not isinstance(metadata, dict):
+        raise ValueError("数据库构建元数据格式无效，请重新构建")
+    return metadata
 
 
 def lookup_meta(connection: sqlite3.Connection, key: str) -> str:

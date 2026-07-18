@@ -9,6 +9,8 @@ updated_at: 2026-07-16
 
 # 真实官方数据构建流程功能验收
 
+> **2026-07-18 发布勘误**：此 `pass` 是历史验收结果，已不再作为发布认证；后续真实资产审计发现遗漏，修复后的验证见 [当前勘误](../2026-07-18-data-build-pipeline-remediation/completion-claim-correction.md)。
+
 ## 验收代理与范围
 
 独立可见 Task agent `/root/inspect_architecture` 以只读方式验收 `goal.md`、推进文档、实现代码及最终真实构建产物 `C:\tmp\stardew-real-final-validate-20260716`。宿主未提供关闭该协作 agent 的接口；其结果已被消费。

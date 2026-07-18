@@ -7,6 +7,8 @@ updated_at: "2026-07-16"
 
 # 功能验收
 
+> **2026-07-18 发布勘误**：本历史验证记录不再构成可发布数据包的认证；后续审计与修复验证见 [当前勘误](../2026-07-18-data-build-pipeline-remediation/completion-claim-correction.md)。
+
 ## Decision
 
 owner 于 2026-07-16 明确取消追加代码复审和独立功能验收，要求保留当前验证状态收尾。

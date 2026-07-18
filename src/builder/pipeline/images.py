@@ -49,7 +49,11 @@ def materialize_entity(
     result: ImageMaterialization,
 ) -> None:
     image_source = entity.extra_json.get("imageSource")
-    if not isinstance(image_source, str):
+    if not isinstance(image_source, str) or not image_source:
+        if entity.extra_json.get("imageRequired") is True:
+            result.errors.append(
+                image_error(entity, "imageSource", "声明了必需图片但未提供 imageSource")
+            )
         result.entities.append(entity)
         return
     source_path = resolve_image_source(entity.extra_json, asset_root, image_source, asset_index)
@@ -132,14 +136,50 @@ def image_rect_for(
         return tuple(int(value) for value in image_rect)
     sprite_index = attributes.get("spriteIndex")
     if isinstance(sprite_index, int) and attributes.get("imageMode") != "full":
-        return sprite_index_rect(source_path, sprite_index)
+        grid_width, grid_height = image_metadata_size(
+            attributes, "imageGridCellSize", (16, 16)
+        )
+        image_width, image_height = image_metadata_size(
+            attributes, "imageSize", (grid_width, grid_height)
+        )
+        return sprite_index_rect(
+            source_path,
+            sprite_index,
+            grid_width,
+            grid_height,
+            image_width,
+            image_height,
+        )
     return None
 
 
-def sprite_index_rect(source_path: Path, sprite_index: int) -> tuple[int, int, int, int]:
+def image_metadata_size(
+    attributes: dict[str, object], key: str, default: tuple[int, int]
+) -> tuple[int, int]:
+    value = attributes.get(key)
+    if value is None:
+        return default
+    if not valid_image_size(value):
+        raise ValueError(f"{key} 必须是两个正整数")
+    return int(value[0]), int(value[1])
+
+
+def sprite_index_rect(
+    source_path: Path,
+    sprite_index: int,
+    grid_width: int = 16,
+    grid_height: int = 16,
+    image_width: int = 16,
+    image_height: int = 16,
+) -> tuple[int, int, int, int]:
     with Image.open(source_path) as image:
-        columns = max(1, image.width // 16)
-    return ((sprite_index % columns) * 16, (sprite_index // columns) * 16, 16, 16)
+        columns = max(1, image.width // grid_width)
+    return (
+        (sprite_index % columns) * grid_width,
+        (sprite_index // columns) * grid_height,
+        image_width,
+        image_height,
+    )
 
 
 def build_entity_image(
@@ -157,6 +197,10 @@ def crop_image(image: Image.Image, image_rect: tuple[int, int, int, int] | None)
     if image_rect is None:
         return image
     x, y, width, height = image_rect
+    if width <= 0 or height <= 0:
+        raise ValueError("图片裁切尺寸必须为正数")
+    if x < 0 or y < 0 or x + width > image.width or y + height > image.height:
+        raise ValueError("图片裁切矩形超出源图边界")
     return image.crop((x, y, x + width, y + height))
 
 
@@ -165,6 +209,14 @@ def valid_image_rect(value: object) -> bool:
         isinstance(value, list)
         and len(value) == 4
         and all(isinstance(item, int) for item in value)
+    )
+
+
+def valid_image_size(value: object) -> bool:
+    return (
+        isinstance(value, list)
+        and len(value) == 2
+        and all(isinstance(item, int) and item > 0 for item in value)
     )
 
 

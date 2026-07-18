@@ -6,6 +6,8 @@ status: active
 
 # 完成阶段 5 到阶段 8
 
+> **2026-07-18 发布勘误**：本阶段的历史 `complete/pass` 表述不能再作为当前数据包可发布的证明。真实资产审计及修复结论见 [当前勘误](../2026-07-18-data-build-pipeline-remediation/completion-claim-correction.md)。
+
 ## Objective
 
 把项目从阶段 4 推进到完整 MVP，完成社区数据合并、`.svdata` 打包、完整数据扩展与图片处理。

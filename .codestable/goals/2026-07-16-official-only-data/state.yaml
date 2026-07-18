@@ -1,6 +1,10 @@
 schema_version: 2
 goal: "official-only-data"
 status: complete
+release_certification:
+  status: superseded
+  correction: "2026-07-18-data-build-pipeline-remediation/completion-claim-correction.md"
+  reason: "后续真实资产审计确认该完成状态不足以证明可发布质量。"
 objective: "彻底移除正式构建对 stardew-valley-data 的依赖，以官方游戏数据直接解析和跨表推导替代事实性社区补充字段。"
 start_point: "当前正式构建已可仅用官方数据生成 3688 条实体，但仍保留可选社区 CLI 参数、加载/匹配/合并代码；1123 条实体会从社区源获得便利型 extra_json 字段。"
 acceptance:

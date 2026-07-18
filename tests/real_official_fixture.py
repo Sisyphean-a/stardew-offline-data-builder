@@ -38,7 +38,11 @@ def create_real_layout(tmp_path: Path) -> Path:
     )
     write_json(
         unpacked_dir / "Data" / "Monsters.json",
-        {"Green Slime": "24/5/0/0/false/1000/66 .5/1/.01"},
+        {"Green Slime": monster_record("Green Slime")},
+    )
+    write_json(
+        unpacked_dir / "Data" / "Monsters.zh-CN.json",
+        {"Green Slime": monster_record("绿色史莱姆")},
     )
     write_json(
         unpacked_dir / "Data" / "Characters.json",
@@ -272,3 +276,7 @@ def write_json(path: Path, value: object) -> None:
 def write_image(path: Path, size: tuple[int, int]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     Image.new("RGBA", size, (255, 0, 0, 255)).save(path)
+
+
+def monster_record(display_name: str) -> str:
+    return f"24/5/0/0/false/1000/66 .5/1/.01/4/2/.00/true/3/{display_name}"

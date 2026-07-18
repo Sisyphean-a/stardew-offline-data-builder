@@ -1,0 +1,31 @@
+schema_version: 2
+goal: "data-build-pipeline-remediation"
+status: complete
+objective: "彻底修复数据构建链路审计的六项 P1 缺陷，纠正不实完成状态，并以真实官方资产证明产物只有在用户可用时才标记为完成。"
+start_point: "2026-07-18 审计确认当前真实包有 57 条不可展示实体、884 条静默缺图实体、数据错误仍标记成功、缺失类型展示元数据，且现有完成声明与真实产物不一致。"
+acceptance:
+  - "审计 Finding 01 至 06 均有针对性回归测试，恢复原缺陷时测试会失败。"
+  - "真实官方资产构建不再产生以纯数字 ID 作为用户展示名称的成就或鞋类；翻译统计不把不可展示名称算作 complete。"
+  - "所有要求图片的视觉实体要么物化正确图片，要么以可审计的官方缺失状态显式报告；不会静默无图。"
+  - "构建报告、manifest、SQLite 和 .svdata 对数据质量状态一致；含阻断性错误的构建不得标记为成功或可发布。"
+  - "数据包为全部实际输出类型提供稳定的中文展示元数据，独立 package 路径不得丢失扩展类型或质量信息。"
+  - "历史完成声明有明确的审计勘误和当前修复目标链接，不再作为发布完成证据。"
+  - "pytest、Ruff、真实官方资产黑盒构建、独立代码审查和 Task agent 功能验收全部通过。"
+non_goals:
+  - "不改写 Git 历史、提交标题或删除已有审计证据。"
+  - "不新增 GUI、Web 服务、网络下载或非官方数据源。"
+  - "不以虚构夹具替代真实官方资产质量验证。"
+  - "不自动覆盖现有 dist 产物；验证使用独立输出目录。"
+budget:
+  kind: none
+  limit: null
+current_iteration: 2
+next_action: "Goal complete."
+blocker_signature: null
+blocker_count: 0
+functional_acceptance: "functional-acceptance.md"
+owner_stop:
+  status: none
+  reason: null
+  decision: null
+updated_at: "2026-07-18"

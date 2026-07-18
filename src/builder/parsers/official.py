@@ -5,6 +5,10 @@ from pathlib import Path
 from typing import Any
 
 from builder.models import DiscoveredJsonFile, RawEntity
+from builder.parsers.legacy_visuals import (
+    apply_special_visual_metadata,
+    apply_villager_visual_metadata,
+)
 from builder.parsers.localization import build_raw_entities_from_entries, optional_text
 from builder.parsers.official_assets import LOCALE_SUFFIX, unwrap_content
 
@@ -79,7 +83,7 @@ def build_mapping_entity(
     if discovered.entity_type == "bundle":
         name = name or optional_text(attributes.get("AreaName"))
     description = first_text(attributes, ("Description", "description", "Text", "text"))
-    apply_image_metadata(attributes, discovered.entity_type, internal_name)
+    apply_image_metadata(attributes, discovered.entity_type, internal_name, source_id)
     return RawEntity(
         source="official",
         entity_type=discovered.entity_type,
@@ -99,7 +103,7 @@ def build_legacy_entity(
     value: str,
     discovered: DiscoveredJsonFile,
 ) -> RawEntity:
-    fields = value.split("/")
+    fields = value.split("^" if discovered.entity_type == "achievement" else "/")
     internal_name = legacy_internal_name(discovered.entity_type, source_id, fields)
     explicit_display_name = legacy_recipe_display_name(discovered.entity_type, fields)
     name = explicit_display_name or legacy_display_name(
@@ -112,7 +116,9 @@ def build_legacy_entity(
     if discovered.entity_type == "crop" and len(fields) > 3:
         attributes["HarvestItemId"] = fields[3]
         source_id = fields[3] or source_id
-    apply_image_metadata(attributes, discovered.entity_type, internal_name)
+    apply_image_metadata(
+        attributes, discovered.entity_type, internal_name, source_id, fields
+    )
     return RawEntity(
         source="official",
         entity_type=discovered.entity_type,
@@ -221,7 +227,7 @@ def select_internal_name(
 
 
 def legacy_internal_name(entity_type: str, source_id: str, fields: list[str]) -> str:
-    if entity_type in {"fish", "furniture"} and fields and fields[0]:
+    if entity_type in {"fish", "furniture", "footwear"} and fields and fields[0]:
         return fields[0]
     return source_id
 
@@ -235,7 +241,11 @@ def legacy_display_name(entity_type: str, fields: list[str], fallback: str) -> s
         return fields[4]
     if entity_type == "furniture" and len(fields) > 7 and fields[7]:
         return fields[7]
-    if entity_type == "fish" and fields and fields[0]:
+    if entity_type == "footwear" and len(fields) > 6 and fields[6]:
+        return fields[6]
+    if entity_type == "monster" and fields and fields[-1]:
+        return fields[-1]
+    if entity_type in {"achievement", "fish"} and fields and fields[0]:
         return fields[0]
     return fallback
 
@@ -250,36 +260,28 @@ def legacy_recipe_display_name(entity_type: str, fields: list[str]) -> str | Non
 
 
 def legacy_description(entity_type: str, fields: list[str]) -> str | None:
-    if entity_type == "quest" and len(fields) > 2 and fields[2]:
-        return fields[2]
+    indexes = {"quest": 2, "achievement": 1, "footwear": 1}
+    index = indexes.get(entity_type)
+    if index is not None and len(fields) > index and fields[index]:
+        return fields[index]
     return None
 
 
 def apply_image_metadata(
-    attributes: dict[str, Any], entity_type: str, internal_name: str | None
+    attributes: dict[str, Any],
+    entity_type: str,
+    internal_name: str | None,
+    source_id: str,
+    fields: list[str] | None = None,
 ) -> None:
     texture = attributes.get("Texture") or attributes.get("TextureName")
     if entity_type == "villager":
-        apply_villager_image_metadata(attributes, texture, internal_name)
+        apply_villager_visual_metadata(attributes, texture, internal_name)
+    elif apply_special_visual_metadata(attributes, entity_type, source_id, fields):
+        return
     elif isinstance(texture, str) and texture:
         attributes["imageSource"] = texture.replace("\\", "/") + ".png"
     elif entity_type == "object":
         attributes["imageSource"] = "Maps/springobjects.png"
     if isinstance(attributes.get("SpriteIndex"), int):
         attributes["spriteIndex"] = attributes["SpriteIndex"]
-
-
-def apply_villager_image_metadata(
-    attributes: dict[str, Any], texture: object, internal_name: str | None
-) -> None:
-    if isinstance(texture, str) and texture:
-        normalized_texture = texture.replace("\\", "/")
-        texture_name = Path(normalized_texture).name
-        attributes["imageSource"] = f"Portraits/{texture_name}.png"
-        attributes["imageFallbackSources"] = [
-            f"Characters/{normalized_texture}.png",
-            f"{normalized_texture}.png",
-        ]
-    elif internal_name:
-        attributes["imageSource"] = f"Portraits/{internal_name}.png"
-    attributes["imageMode"] = "full"

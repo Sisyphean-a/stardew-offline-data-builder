@@ -3,14 +3,19 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
-from builder.config import PRIMARY_ENTITY_TYPES
 from builder.models import BuildSummary, NormalizedEntity
+from builder.pipeline.artifact_metadata import content_metadata
+from builder.pipeline.quality import quality_payload
 from builder.utils.json_io import dump_json_file
 
 
-def summarize_entities(entities: list[NormalizedEntity]) -> BuildSummary:
+def summarize_entities(
+    entities: list[NormalizedEntity],
+    data_errors: int = 0,
+) -> BuildSummary:
     counts = Counter(entity.entity_type for entity in entities)
     missing = sum(1 for entity in entities if entity.translation_status == "missing")
+    invalid = sum(1 for entity in entities if entity.translation_status == "invalid")
     not_applicable = sum(
         1 for entity in entities if entity.translation_status == "not_applicable"
     )
@@ -18,6 +23,8 @@ def summarize_entities(entities: list[NormalizedEntity]) -> BuildSummary:
         entities=len(entities),
         missing_translations=missing,
         not_applicable_translations=not_applicable,
+        invalid_translations=invalid,
+        data_errors=data_errors,
         counts_by_type=dict(counts),
     )
 
@@ -55,27 +62,27 @@ def build_summary_payload(
     summary: BuildSummary,
     errors: list[dict[str, str]],
 ) -> dict[str, object]:
-    extra_counts = {
-        entity_type: count
-        for entity_type, count in summary.counts_by_type.items()
-        if entity_type not in PRIMARY_ENTITY_TYPES
-    }
+    content = content_metadata(summary)
+    quality = quality_payload(summary, data_errors=len(errors))
     return {
-        "success": True,
+        "success": quality["status"] == "passed",
         "counts": {
-            "entities": summary.entities,
-            "objects": summary.counts_by_type.get("object", 0),
-            "crops": summary.counts_by_type.get("crop", 0),
-            "fish": summary.counts_by_type.get("fish", 0),
-            "villagers": summary.counts_by_type.get("villager", 0),
-            "extraCounts": extra_counts,
+            "entities": content["entities"],
+            "objects": content["objects"],
+            "crops": content["crops"],
+            "fish": content["fish"],
+            "villagers": content["villagers"],
+            "extraCounts": content["extraCounts"],
+            "entityTypes": content["entityTypes"],
         },
         "warnings": {
             "missingTranslations": summary.missing_translations,
+            "invalidTranslations": summary.invalid_translations,
             "notApplicableTranslations": summary.not_applicable_translations,
             "duplicateIds": summary.duplicate_ids,
             "dataErrors": len(errors),
         },
+        "quality": quality,
     }
 
 

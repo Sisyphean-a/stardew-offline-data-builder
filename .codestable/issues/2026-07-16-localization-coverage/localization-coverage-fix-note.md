@@ -9,6 +9,8 @@ tags: [localization, official-data, parser]
 
 # 真实数据本地化覆盖修复记录
 
+> **2026-07-18 发布勘误**：本记录关于“旧式 247 条记录没有内部键冒充显示名”和零缺失翻译的发布性结论已被后续真实资产审计反证。它只保留为当时的局部修复记录；修复后的重新验证见 [当前勘误](../../goals/2026-07-18-data-build-pipeline-remediation/completion-claim-correction.md)。
+
 ## 1. 实际采用方案
 
 采用分析中的方案 A：以真实官方 `Strings/*.json` 与 `Strings/*.zh-CN.json` 为唯一文本来源，补齐旧式家具、特别订单、怪物任务、任务、收集包、料理/制作配方和收集包区域的标准化中文投影；配方只在缺少显式官方名时才回填产物名；技术记录改为显式 `not_applicable`，不再伪装成缺失翻译。
