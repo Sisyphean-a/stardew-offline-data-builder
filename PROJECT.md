@@ -159,7 +159,7 @@ villager:Abigail
 
 搜索覆盖中文、英文、拼音、拼音首字母、别名和关键词。
 
-当前 schema version：`2`。
+当前 schema version：`4`。构建元数据同时写入 SQLite 的 `artifact_metadata`，并由 manifest、报告和 `.svdata` 共同校验质量与可发布状态。
 
 ## 7. CLI
 
@@ -183,6 +183,7 @@ python -m builder package --output .\dist
 | 5 | 官方源数据错误 |
 | 6 | 数据库错误 |
 | 7 | 打包错误 |
+| 8 | 构建质量错误；保留诊断产物但不生成可发布数据包 |
 
 ## 8. 输出
 

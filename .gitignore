@@ -33,6 +33,7 @@ dist/*
 *.tmp
 
 # Project-specific generated data
+.tmp/
 Content (unpacked)/
 !tests/fixtures/game-data/Content (unpacked)/
 !tests/fixtures/game-data/Content (unpacked)/**
