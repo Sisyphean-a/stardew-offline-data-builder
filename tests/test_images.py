@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from builder.pipeline.images import crop_image
+from builder.pipeline.images import build_entity_image, crop_image
 from builder.utils.images import (
     create_thumbnail,
     crop_transparent_bounds,
@@ -39,6 +39,30 @@ def test_create_thumbnail_keeps_aspect_ratio() -> None:
     thumbnail = create_thumbnail(image, max_size=(20, 20))
 
     assert thumbnail.size == (20, 10)
+
+
+def test_sprite_thumbnail_uses_nearest_sampling() -> None:
+    image = Image.new("RGBA", (4, 4), (255, 0, 0, 255))
+    for x in range(2, 4):
+        for y in range(4):
+            image.putpixel((x, y), (0, 0, 255, 255))
+
+    thumbnail = create_thumbnail(image, max_size=(2, 2), resampling=Image.Resampling.NEAREST)
+
+    assert thumbnail.getpixel((0, 0)) == (255, 0, 0, 255)
+    assert thumbnail.getpixel((1, 0)) == (0, 0, 255, 255)
+
+
+def test_sprite_materialization_preserves_declared_transparent_canvas(tmp_path: Path) -> None:
+    source_path = tmp_path / "sprite.png"
+    image = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+    image.putpixel((1, 1), (255, 0, 0, 255))
+    image.save(source_path)
+
+    output_path = tmp_path / "images" / "sprite.webp"
+    build_entity_image(source_path, (0, 0, 4, 4), output_path, preserve_canvas=True)
+
+    assert Image.open(output_path).size == (4, 4)
 
 
 def test_crop_image_rejects_out_of_bounds_rectangles() -> None:

@@ -64,7 +64,14 @@ def materialize_entity(
     image_rect = image_rect_for(entity.extra_json, source_path)
     relative_output = Path("images") / f"{sanitize_id(entity.id)}.webp"
     try:
-        build_entity_image(source_path, image_rect, output_dir / relative_output)
+        image_mode = entity.extra_json.get("imageMode")
+        preserve_canvas = image_mode == "sprite" or image_mode == "portrait"
+        build_entity_image(
+            source_path,
+            image_rect,
+            output_dir / relative_output,
+            preserve_canvas=preserve_canvas,
+        )
     except Exception as exc:
         result.errors.append(image_error(entity, image_source, str(exc)))
         result.entities.append(entity)
@@ -133,6 +140,8 @@ def image_rect_for(
 ) -> tuple[int, int, int, int] | None:
     image_rect = attributes.get("imageRect")
     if valid_image_rect(image_rect):
+        if attributes.get("imageMode") == "portrait" and not is_portrait_source(source_path):
+            return None
         return tuple(int(value) for value in image_rect)
     sprite_index = attributes.get("spriteIndex")
     if isinstance(sprite_index, int) and attributes.get("imageMode") != "full":
@@ -151,6 +160,10 @@ def image_rect_for(
             image_height,
         )
     return None
+
+
+def is_portrait_source(source_path: Path) -> bool:
+    return source_path.parent.name.casefold() == "portraits"
 
 
 def image_metadata_size(
@@ -186,10 +199,19 @@ def build_entity_image(
     source_path: Path,
     image_rect: tuple[int, int, int, int] | None,
     output_path: Path,
+    *,
+    preserve_canvas: bool = False,
 ) -> None:
     image = Image.open(source_path).convert("RGBA")
     sprite = crop_image(image, image_rect)
-    thumbnail = create_thumbnail(crop_transparent_bounds(sprite), max_size=(96, 96))
+    # Sprite sheets are drawn in their declared cell canvas; cropping alpha would
+    # change the game's pixel placement and aspect ratio.
+    prepared = sprite if preserve_canvas else crop_transparent_bounds(sprite)
+    thumbnail = create_thumbnail(
+        prepared,
+        max_size=(96, 96),
+        resampling=Image.Resampling.NEAREST if preserve_canvas else Image.Resampling.LANCZOS,
+    )
     save_lossless_webp(thumbnail, output_path)
 
 

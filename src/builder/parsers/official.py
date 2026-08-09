@@ -285,3 +285,11 @@ def apply_image_metadata(
         attributes["imageSource"] = "Maps/springobjects.png"
     if isinstance(attributes.get("SpriteIndex"), int):
         attributes["spriteIndex"] = attributes["SpriteIndex"]
+        if entity_type == "object":
+            attributes.update(
+                {
+                    "imageGridCellSize": [16, 16],
+                    "imageSize": [16, 16],
+                    "imageMode": "sprite",
+                }
+            )

@@ -33,6 +33,7 @@ def apply_special_visual_metadata(
                 "imageSource": "LooseSprites/Cursors.png",
                 # CollectionsPage uses the shared standard cursor tile 25 for every achievement.
                 "imageRect": [192, 128, 64, 64],
+                "imageMode": "sprite",
                 "imageRequired": True,
             }
         )
@@ -74,6 +75,7 @@ def apply_required_sprite(
             "spriteIndex": sprite_index,
             "imageGridCellSize": [*grid_size],
             "imageSize": [width, height],
+            "imageMode": "sprite",
             "imageRequired": True,
         }
     )
@@ -124,7 +126,9 @@ def apply_villager_visual_metadata(
         ]
     elif internal_name:
         attributes["imageSource"] = f"Portraits/{internal_name}.png"
-    attributes["imageMode"] = "full"
+    # CharacterSubject.DrawPortrait draws only the first 64x64 portrait cell.
+    attributes["imageRect"] = [0, 0, 64, 64]
+    attributes["imageMode"] = "portrait"
     attributes["imageRequired"] = True
 
 

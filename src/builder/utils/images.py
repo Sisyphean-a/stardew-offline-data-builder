@@ -35,9 +35,10 @@ def split_sprite_sheet(
 def create_thumbnail(
     image: Image.Image,
     max_size: tuple[int, int],
+    resampling: Image.Resampling = Image.Resampling.LANCZOS,
 ) -> Image.Image:
     thumbnail = image.copy()
-    thumbnail.thumbnail(max_size, Image.Resampling.LANCZOS)
+    thumbnail.thumbnail(max_size, resampling)
     return thumbnail
 
 

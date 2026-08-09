@@ -17,6 +17,8 @@ def test_legacy_visual_records_use_their_real_sprite_metadata(tmp_path: Path) ->
     by_id = {entity.id: entity for entity in entities}
 
     assert by_id["achievement:0"].extra_json["imageRect"] == [192, 128, 64, 64]
+    assert by_id["villager:Abigail"].extra_json["imageRect"] == [0, 0, 64, 64]
+    assert by_id["object:1"].extra_json["imageGridCellSize"] == [16, 16]
     assert by_id["footwear:1"].extra_json["spriteIndex"] == 1
     assert by_id["big_craftable:1"].extra_json["imageGridCellSize"] == [16, 32]
     assert by_id["furniture:0"].extra_json["imageSize"] == [16, 32]
@@ -30,10 +32,31 @@ def test_legacy_visual_records_use_their_real_sprite_metadata(tmp_path: Path) ->
     assert image_sizes(tmp_path / "output") == {
         "achievement-0.webp": (64, 64),
         "big_craftable-1.webp": (16, 32),
+        "object-1.webp": (16, 16),
         "footwear-1.webp": (16, 16),
         "furniture-0.webp": (16, 32),
         "furniture-1.webp": (32, 48),
+        "villager-Abigail.webp": (64, 64),
     }
+
+
+def test_villager_character_fallback_keeps_its_actual_canvas(tmp_path: Path) -> None:
+    entities = normalize_entities(
+        parse_entities(
+            "villager",
+            {"Mariner": {"Name": "Mariner"}},
+            {"Mariner": {"Name": "Mariner"}},
+        ),
+        aliases={},
+        categories={},
+    )
+    asset_root = tmp_path / "assets"
+    write_image(asset_root / "Characters" / "Mariner.png", (16, 32), (2, 3, 10, 24))
+
+    result = materialize_entity_images_with_report(entities, asset_root, tmp_path / "output")
+
+    assert result.errors == []
+    assert image_sizes(tmp_path / "output") == {"villager-Mariner.webp": (16, 32)}
 
 
 def test_achievements_share_the_official_collections_cursor_tile() -> None:
@@ -133,6 +156,12 @@ def normalized_visual_entities() -> list[NormalizedEntity]:
             {"1": "Sneakers/有点单薄。/50/1/0/0/运动鞋"},
         ),
         *parse_entities(
+            "object", {"1": object_record("Stone")}, {"1": object_record("石头")}
+        ),
+        *parse_entities(
+            "villager", {"Abigail": {"Name": "Abigail"}}, {"Abigail": {"Name": "Abigail"}}
+        ),
+        *parse_entities(
             "big_craftable", {"1": big_craftable("Keg")}, {"1": big_craftable("小桶")}
         ),
         *parse_entities(
@@ -142,6 +171,16 @@ def normalized_visual_entities() -> list[NormalizedEntity]:
         ),
     ]
     return normalize_entities(raw_entities, aliases={}, categories={})
+
+
+def object_record(display_name: str) -> dict[str, object]:
+    return {
+        "Name": "Stone",
+        "DisplayName": display_name,
+        "Description": "A stone.",
+        "Texture": None,
+        "SpriteIndex": 1,
+    }
 
 
 def parse_entities(
@@ -180,6 +219,7 @@ def furniture_records(chair_name: str, table_name: str) -> dict[str, str]:
 def write_visual_assets(asset_root: Path) -> None:
     write_image(asset_root / "LooseSprites" / "Cursors.png", (256, 192), (192, 128, 64, 64))
     write_image(asset_root / "Maps" / "springobjects.png", (32, 16), (16, 0, 16, 16))
+    write_image(asset_root / "Portraits" / "Abigail.png", (128, 128), (4, 5, 56, 54))
     write_image(asset_root / "TileSheets" / "Craftables.png", (32, 32), (16, 0, 16, 32))
     write_image(asset_root / "TileSheets" / "furniture.png", (16, 32), (0, 0, 16, 32))
     write_image(asset_root / "TileSheets" / "custom_furniture.png", (32, 48), (0, 0, 32, 48))
