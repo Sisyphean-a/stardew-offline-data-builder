@@ -59,6 +59,59 @@ def test_villager_character_fallback_keeps_its_actual_canvas(tmp_path: Path) -> 
     assert image_sizes(tmp_path / "output") == {"villager-Mariner.webp": (16, 32)}
 
 
+def test_tools_use_menu_sprite_index_for_static_icons(tmp_path: Path) -> None:
+    entities = normalize_entities(
+        parse_entities(
+            "tool",
+            {
+                "WateringCan": {
+                    "Name": "Watering Can",
+                    "DisplayName": "Watering Can",
+                    "Texture": r"TileSheets\tools",
+                    "SpriteIndex": 273,
+                    "MenuSpriteIndex": 296,
+                }
+            },
+            {},
+        ),
+        aliases={},
+        categories={},
+    )
+    tool = next(entity for entity in entities if entity.id == "tool:WateringCan")
+    assert tool.extra_json["spriteIndex"] == 296
+    assert tool.extra_json["imageGridCellSize"] == [16, 16]
+    assert tool.extra_json["imageSize"] == [16, 16]
+    assert tool.extra_json["imageMode"] == "sprite"
+
+    asset_root = tmp_path / "assets"
+    image = Image.new("RGBA", (512, 176), (0, 0, 0, 0))
+    image.paste((255, 0, 0, 255), (128, 144, 144, 160))
+    asset_root.joinpath("TileSheets").mkdir(parents=True)
+    image.save(asset_root / "TileSheets" / "tools.png")
+    result = materialize_entity_images_with_report(entities, asset_root, tmp_path / "output")
+
+    assert result.errors == []
+    output = Image.open(tmp_path / "output" / "images" / "tool-WateringCan.webp").convert("RGBA")
+    assert output.getchannel("A").getbbox() is not None
+
+
+def test_tools_fall_back_to_sprite_index_when_menu_index_is_negative() -> None:
+    entities = parse_entities(
+        "tool",
+        {
+            "MilkPail": {
+                "Name": "Milk Pail",
+                "DisplayName": "Milk Pail",
+                "Texture": r"TileSheets\tools",
+                "SpriteIndex": 6,
+                "MenuSpriteIndex": -1,
+            }
+        },
+        {},
+    )
+    assert entities[0].attributes["spriteIndex"] == 6
+
+
 def test_achievements_share_the_official_collections_cursor_tile() -> None:
     entities = normalize_entities(
         parse_entities(
@@ -82,6 +135,43 @@ def test_achievements_share_the_official_collections_cursor_tile() -> None:
     assert {tuple(entity.extra_json["imageRect"]) for entity in entities} == {
         (192, 128, 64, 64)
     }
+
+
+def test_fully_transparent_optional_image_is_not_materialized(tmp_path: Path) -> None:
+    asset_root = tmp_path / "assets"
+    asset_root.mkdir()
+    Image.new("RGBA", (16, 16), (0, 0, 0, 0)).save(asset_root / "blank.png")
+    entity = normalized_entity(
+        "object:blank",
+        {"imageSource": "blank.png", "imageMode": "sprite", "spriteIndex": 0},
+    )
+
+    result = materialize_entity_images_with_report([entity], asset_root, tmp_path / "out")
+
+    assert result.errors == []
+    assert result.entities[0].image_path is None
+    assert result.entities[0].extra_json["imageAvailability"] == "not_applicable"
+    assert not (tmp_path / "out" / "images" / "object-blank.webp").exists()
+
+
+def test_fully_transparent_required_image_is_reported(tmp_path: Path) -> None:
+    asset_root = tmp_path / "assets"
+    asset_root.mkdir()
+    Image.new("RGBA", (16, 16), (0, 0, 0, 0)).save(asset_root / "blank.png")
+    entity = normalized_entity(
+        "achievement:blank",
+        {
+            "imageSource": "blank.png",
+            "imageMode": "sprite",
+            "spriteIndex": 0,
+            "imageRequired": True,
+        },
+    )
+
+    result = materialize_entity_images_with_report([entity], asset_root, tmp_path / "out")
+
+    assert result.entities == [entity]
+    assert result.errors[0]["reason"] == "必需图片内容完全透明"
 
 
 def test_required_image_without_source_is_reported(tmp_path: Path) -> None:
@@ -132,7 +222,7 @@ def test_hidden_non_social_villager_is_not_expected_to_have_a_portrait() -> None
         ("table", (2, 3)),
         ("rug", (2, 3)),
         ("window", (3, 2)),
-        ("fireplace", (1, 2)),
+        ("fireplace", (2, 5)),
         ("torch", (1, 2)),
         ("sconce", (1, 2)),
     ],

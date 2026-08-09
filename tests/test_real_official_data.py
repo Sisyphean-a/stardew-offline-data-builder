@@ -54,6 +54,9 @@ def test_real_official_layout_builds_primary_entities(tmp_path: Path) -> None:
     price = connection.execute(
         "SELECT extra_json FROM entities WHERE id = 'object:24'"
     ).fetchone()
+    crop_image_metadata = connection.execute(
+        "SELECT extra_json FROM entities WHERE id = 'crop:24'"
+    ).fetchone()
     connection.close()
 
     assert rows == {
@@ -63,7 +66,11 @@ def test_real_official_layout_builds_primary_entities(tmp_path: Path) -> None:
         "villager:Abigail": "阿比盖尔",
     }
     assert json.loads(price[0])["Price"] == 40
+    crop_attributes = json.loads(crop_image_metadata[0])
+    assert crop_attributes["imageSource"] == "Maps/springobjects.png"
+    assert crop_attributes["spriteIndex"] == 0
     assert (output_dir / "images" / "object-24.webp").exists()
+    assert (output_dir / "images" / "crop-24.webp").exists()
     assert (output_dir / "reports" / "coverage.json").exists()
 
 
@@ -243,7 +250,11 @@ def test_real_official_layout_derives_drops_minerals_and_rings(tmp_path: Path) -
 
     assert by_id["mineral:66"].name_zh == "紫水晶"
     assert by_id["ring:517"].name_zh == "光辉戒指"
-    assert by_id["drop:Green-Slime:0"].name_zh == "紫水晶"
+    drop = by_id["drop:Green-Slime:0"]
+    assert "绿色史莱姆" in drop.name_zh
+    assert "紫水晶" in drop.name_zh
+    assert "记录0" in drop.name_zh
+    assert drop.name_en is None
 
 
 def test_official_references_cover_item_and_tag_edge_cases(tmp_path: Path) -> None:

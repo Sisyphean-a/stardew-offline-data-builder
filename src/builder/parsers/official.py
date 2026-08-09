@@ -5,12 +5,9 @@ from pathlib import Path
 from typing import Any
 
 from builder.models import DiscoveredJsonFile, RawEntity
-from builder.parsers.legacy_visuals import (
-    apply_special_visual_metadata,
-    apply_villager_visual_metadata,
-)
 from builder.parsers.localization import build_raw_entities_from_entries, optional_text
 from builder.parsers.official_assets import LOCALE_SUFFIX, unwrap_content
+from builder.parsers.official_visuals import apply_image_metadata
 
 
 def parse_official_file(
@@ -265,31 +262,3 @@ def legacy_description(entity_type: str, fields: list[str]) -> str | None:
     if index is not None and len(fields) > index and fields[index]:
         return fields[index]
     return None
-
-
-def apply_image_metadata(
-    attributes: dict[str, Any],
-    entity_type: str,
-    internal_name: str | None,
-    source_id: str,
-    fields: list[str] | None = None,
-) -> None:
-    texture = attributes.get("Texture") or attributes.get("TextureName")
-    if entity_type == "villager":
-        apply_villager_visual_metadata(attributes, texture, internal_name)
-    elif apply_special_visual_metadata(attributes, entity_type, source_id, fields):
-        return
-    elif isinstance(texture, str) and texture:
-        attributes["imageSource"] = texture.replace("\\", "/") + ".png"
-    elif entity_type == "object":
-        attributes["imageSource"] = "Maps/springobjects.png"
-    if isinstance(attributes.get("SpriteIndex"), int):
-        attributes["spriteIndex"] = attributes["SpriteIndex"]
-        if entity_type == "object":
-            attributes.update(
-                {
-                    "imageGridCellSize": [16, 16],
-                    "imageSize": [16, 16],
-                    "imageMode": "sprite",
-                }
-            )

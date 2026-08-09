@@ -15,7 +15,7 @@ FURNITURE_DEFAULT_SIZES = {
     "table": (2, 3),
     "rug": (2, 3),
     "window": (3, 2),
-    "fireplace": (1, 2),
+    "fireplace": (2, 5),
     "torch": (1, 2),
     "sconce": (1, 2),
 }

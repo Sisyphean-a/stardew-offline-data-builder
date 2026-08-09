@@ -64,6 +64,13 @@ def materialize_entity(
     image_rect = image_rect_for(entity.extra_json, source_path)
     relative_output = Path("images") / f"{sanitize_id(entity.id)}.webp"
     try:
+        if image_is_fully_transparent(source_path, image_rect):
+            if entity.extra_json.get("imageRequired") is True:
+                raise ValueError("必需图片内容完全透明")
+            attributes = dict(entity.extra_json)
+            attributes["imageAvailability"] = "not_applicable"
+            result.entities.append(entity.model_copy(update={"extra_json": attributes}))
+            return
         image_mode = entity.extra_json.get("imageMode")
         preserve_canvas = image_mode == "sprite" or image_mode == "portrait"
         build_entity_image(
@@ -193,6 +200,13 @@ def sprite_index_rect(
         image_width,
         image_height,
     )
+
+
+def image_is_fully_transparent(
+    source_path: Path, image_rect: tuple[int, int, int, int] | None
+) -> bool:
+    with Image.open(source_path) as image:
+        return crop_image(image.convert("RGBA"), image_rect).getchannel("A").getbbox() is None
 
 
 def build_entity_image(
