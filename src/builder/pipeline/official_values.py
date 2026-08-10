@@ -5,6 +5,19 @@ from typing import Any
 
 QUALIFIED_ITEM_ID = re.compile(r"^\(([A-Z]+)\)(.+)$")
 OBJECT_ENTITY_TYPES = ("object", "mineral", "ring", "fish")
+UNQUALIFIED_ITEM_ENTITY_TYPES = (
+    "object",
+    "mineral",
+    "ring",
+    "crop",
+    "fish",
+    "big_craftable",
+    "furniture",
+    "footwear",
+    "weapon",
+    "tool",
+    "trinket",
+)
 
 
 def entity_ids_for_item(value: object) -> tuple[str, ...]:
@@ -16,7 +29,10 @@ def entity_ids_for_item(value: object) -> tuple[str, ...]:
         return entity_ids_for_item(parts[1]) if len(parts) > 1 else ()
     match = QUALIFIED_ITEM_ID.match(item_id)
     if match is None:
-        return tuple(f"{entity_type}:{item_id}" for entity_type in OBJECT_ENTITY_TYPES)
+        return tuple(
+            f"{entity_type}:{item_id}"
+            for entity_type in UNQUALIFIED_ITEM_ENTITY_TYPES
+        )
     prefix, source_id = match.groups()
     mapping = {
         "B": ("footwear",),

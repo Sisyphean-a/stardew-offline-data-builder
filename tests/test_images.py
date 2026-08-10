@@ -5,7 +5,13 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from builder.pipeline.images import build_entity_image, crop_image
+from builder.models import NormalizedEntity
+from builder.pipeline import images as image_pipeline
+from builder.pipeline.images import (
+    build_entity_image,
+    crop_image,
+    materialize_entity_images_with_report,
+)
 from builder.utils.images import (
     create_thumbnail,
     crop_transparent_bounds,
@@ -63,6 +69,41 @@ def test_sprite_materialization_preserves_declared_transparent_canvas(tmp_path: 
     build_entity_image(source_path, (0, 0, 4, 4), output_path, preserve_canvas=True)
 
     assert Image.open(output_path).size == (4, 4)
+
+
+def test_materialization_decodes_each_source_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source_path = tmp_path / "source.png"
+    Image.new("RGBA", (16, 16), (255, 0, 0, 255)).save(source_path)
+    entity = NormalizedEntity(
+        id="object:source",
+        entity_type="object",
+        game_id="source",
+        internal_name=None,
+        name_zh="来源",
+        name_en=None,
+        description_zh=None,
+        description_en=None,
+        category=None,
+        extra_json={"imageSource": "source.png", "imageMode": "full"},
+        source_file="Data/test.json",
+    )
+    opened_paths: list[Path] = []
+    original_open = image_pipeline.Image.open
+
+    def counting_open(path: str | Path, *args: object, **kwargs: object) -> Image.Image:
+        if Path(path) == source_path:
+            opened_paths.append(source_path)
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(image_pipeline.Image, "open", counting_open)
+
+    result = materialize_entity_images_with_report([entity], tmp_path, tmp_path / "output")
+
+    assert result.errors == []
+    assert result.entities[0].image_path == "images/object-source.webp"
+    assert opened_paths == [source_path]
 
 
 def test_crop_image_rejects_out_of_bounds_rectangles() -> None:

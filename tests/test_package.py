@@ -49,7 +49,7 @@ def test_build_writes_manifest_and_svdata(tmp_path: Path, monkeypatch) -> None:
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["database"]["file"] == "stardew.db"
-    assert manifest["content"]["entities"] == 25
+    assert manifest["content"]["entities"] == 24
 
     with ZipFile(package_path) as archive:
         assert sorted(archive.namelist()) == [

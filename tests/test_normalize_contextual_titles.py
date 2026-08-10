@@ -78,6 +78,56 @@ def test_publish_filter_keeps_contextual_records_but_removes_only_explicit_false
     } <= published_ids
 
 
+def test_publish_filter_removes_shops_without_user_visible_options() -> None:
+    entities = normalize_entities(
+        [
+            raw(
+                "shop",
+                "SingingStone",
+                attributes={"ItemId": "(BC)94"},
+                source_file="Data/LostItemsShop.json",
+            ),
+            raw(
+                "shop",
+                "EmptyShop",
+                attributes={"Items": [{"Id": "empty"}]},
+                source_file="Data/Shops.json",
+            ),
+            raw("weapon", "1", name="测试武器"),
+            raw("object", "MixedFlowerSeeds", name="混合花卉种子"),
+            raw("furniture", "SamsSkateboard", name="山姆的滑板"),
+            raw(
+                "shop",
+                "AdventureShop",
+                attributes={"Items": [{"Id": "sword", "ItemId": "(W)1"}]},
+                source_file="Data/Shops.json",
+            ),
+            raw(
+                "shop",
+                "WizardFurnitureCatalogue",
+                attributes={"Items": [{"Id": "all", "ItemId": "ALL_ITEMS (F)"}]},
+                source_file="Data/Shops.json",
+            ),
+            raw(
+                "shop",
+                "NamedFurnitureShop",
+                attributes={"Items": [{"Id": "skateboard", "ItemId": "SamsSkateboard"}]},
+                source_file="Data/Shops.json",
+            ),
+        ],
+        aliases={},
+        categories={},
+    )
+
+    published_ids = {entity.id for entity in filter_publishable_entities(entities)}
+
+    assert "shop:SingingStone" not in published_ids
+    assert "shop:EmptyShop" not in published_ids
+    assert "shop:AdventureShop" in published_ids
+    assert "shop:WizardFurnitureCatalogue" not in published_ids
+    assert "shop:NamedFurnitureShop" in published_ids
+
+
 def test_schedule_titles_follow_context_rules_and_hide_technical_english() -> None:
     entities = normalize_entities(
         [
@@ -232,7 +282,7 @@ def test_known_shop_tailoring_and_ginger_titles_are_readable() -> None:
     )
     by_type = {entity.entity_type: entity for entity in entities}
 
-    assert by_type["shop"].name_zh == "商店：Seed Shop"
+    assert by_type["shop"].name_zh == "皮埃尔商店"
     assert by_type["tailoring_recipe"].name_zh == "裁缝配方：测试产物"
     assert by_type["ginger_island"].name_zh == "姜岛事件：姜岛西部·事件/条件：event"
     for entity_type in ("shop", "tailoring_recipe", "ginger_island"):
@@ -240,6 +290,41 @@ def test_known_shop_tailoring_and_ginger_titles_are_readable() -> None:
         assert entity.name_en is None
         assert "script" not in entity.name_zh
         assert "未命名" not in entity.name_zh
+
+
+def test_shop_titles_use_chinese_labels_and_lost_item_names() -> None:
+    entities = normalize_entities(
+        [
+            raw("villager", "Abigail", name="阿比盖尔", locale="zh-CN"),
+            raw("furniture", "1306", name="利亚的雕像", locale="zh-CN"),
+            raw("shop", "AdventureShop"),
+            raw("shop", "DesertFestival_Abigail"),
+            raw(
+                "shop",
+                "LeahsSculpture",
+                attributes={"ItemId": "(F)1306"},
+                source_file="Data/LostItemsShop.json",
+            ),
+            raw(
+                "shop",
+                "EmilysMagicHat",
+                attributes={"ItemId": "(H)41"},
+                source_file="Data/LostItemsShop.json",
+            ),
+        ],
+        aliases={},
+        categories={},
+    )
+    by_id = {entity.id: entity for entity in entities}
+
+    assert by_id["shop:AdventureShop"].name_zh == "冒险家公会商店"
+    assert by_id["shop:DesertFestival_Abigail"].name_zh == "沙漠节：阿比盖尔"
+    assert by_id["shop:LeahsSculpture"].name_zh == "利亚的雕像"
+    assert by_id["shop:EmilysMagicHat"].name_zh == "艾米丽的魔法帽"
+    for entity in by_id.values():
+        if entity.entity_type == "shop":
+            assert entity.name_en is None
+            assert entity.name_zh != ""
 
 
 def test_unresolved_tailoring_outputs_use_source_variants() -> None:

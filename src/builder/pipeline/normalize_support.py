@@ -39,16 +39,12 @@ def item_key(entity: NormalizedEntity) -> str:
 
 
 def item_key_value(value: object) -> str:
-    return (
-        str(value or "")
-        .removeprefix("(O)")
-        .removeprefix("(BC)")
-        .removeprefix("(H)")
-        .removeprefix("(F)")
-        .removeprefix("(T)")
-        .removeprefix("(W)")
-        .casefold()
-    )
+    reference = str(value or "").strip()
+    for prefix in ("(O)", "(BC)", "(B)", "(H)", "(F)", "(T)", "(W)", "(S)", "(P)"):
+        if reference.casefold().startswith(prefix.casefold()):
+            reference = reference[len(prefix) :]
+            break
+    return reference.casefold()
 
 
 def displayable_entity_name(

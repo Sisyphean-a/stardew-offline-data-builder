@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import re
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 
 from PIL import Image
@@ -35,9 +37,18 @@ def materialize_entity_images_with_report(
     images_dir = output_dir / "images"
     clear_previous_images(images_dir, output_dir)
     asset_index = build_asset_index(asset_root)
+    materialize = partial(
+        materialize_entity,
+        asset_root=asset_root,
+        asset_index=asset_index,
+        output_dir=output_dir,
+    )
     result = ImageMaterialization()
-    for entity in entities:
-        materialize_entity(entity, asset_root, asset_index, output_dir, result)
+    # Guarantee: executor.map keeps entity and diagnostic order stable despite parallel image work.
+    with ThreadPoolExecutor() as executor:
+        for entity_result in executor.map(materialize, entities):
+            result.entities.extend(entity_result.entities)
+            result.errors.extend(entity_result.errors)
     return result
 
 
@@ -46,8 +57,8 @@ def materialize_entity(
     asset_root: Path,
     asset_index: dict[str, Path],
     output_dir: Path,
-    result: ImageMaterialization,
-) -> None:
+) -> ImageMaterialization:
+    result = ImageMaterialization()
     image_source = entity.extra_json.get("imageSource")
     if not isinstance(image_source, str) or not image_source:
         if entity.extra_json.get("imageRequired") is True:
@@ -55,35 +66,35 @@ def materialize_entity(
                 image_error(entity, "imageSource", "声明了必需图片但未提供 imageSource")
             )
         result.entities.append(entity)
-        return
+        return result
     source_path = resolve_image_source(entity.extra_json, asset_root, image_source, asset_index)
     if source_path is None:
         result.errors.append(image_error(entity, image_source, "未找到官方图片资源"))
         result.entities.append(entity)
-        return
+        return result
     relative_output = Path("images") / f"{sanitize_id(entity.id)}.webp"
     try:
         image_rect = image_rect_for(entity.extra_json, source_path)
-        if image_is_fully_transparent(source_path, image_rect):
+        image_mode = entity.extra_json.get("imageMode")
+        preserve_canvas = image_mode == "sprite" or image_mode == "portrait"
+        if not build_entity_image(
+            source_path,
+            image_rect,
+            output_dir / relative_output,
+            preserve_canvas=preserve_canvas,
+        ):
             if entity.extra_json.get("imageRequired") is True:
                 raise ValueError("必需图片内容完全透明")
             attributes = dict(entity.extra_json)
             attributes["imageAvailability"] = "not_applicable"
             result.entities.append(entity.model_copy(update={"extra_json": attributes}))
-            return
-        image_mode = entity.extra_json.get("imageMode")
-        preserve_canvas = image_mode == "sprite" or image_mode == "portrait"
-        build_entity_image(
-            source_path,
-            image_rect,
-            output_dir / relative_output,
-            preserve_canvas=preserve_canvas,
-        )
+            return result
     except Exception as exc:
         result.errors.append(image_error(entity, image_source, str(exc)))
         result.entities.append(entity)
-        return
+        return result
     result.entities.append(entity.model_copy(update={"image_path": relative_output.as_posix()}))
+    return result
 
 
 def clear_previous_images(images_dir: Path, output_dir: Path) -> None:
@@ -207,22 +218,17 @@ def sprite_index_rect(
     )
 
 
-def image_is_fully_transparent(
-    source_path: Path, image_rect: tuple[int, int, int, int] | None
-) -> bool:
-    with Image.open(source_path) as image:
-        return crop_image(image.convert("RGBA"), image_rect).getchannel("A").getbbox() is None
-
-
 def build_entity_image(
     source_path: Path,
     image_rect: tuple[int, int, int, int] | None,
     output_path: Path,
     *,
     preserve_canvas: bool = False,
-) -> None:
-    image = Image.open(source_path).convert("RGBA")
-    sprite = crop_image(image, image_rect)
+) -> bool:
+    with Image.open(source_path) as source_image:
+        sprite = crop_image(source_image.convert("RGBA"), image_rect)
+    if sprite.getchannel("A").getbbox() is None:
+        return False
     # Sprite sheets are drawn in their declared cell canvas; cropping alpha would
     # change the game's pixel placement and aspect ratio.
     prepared = sprite if preserve_canvas else crop_transparent_bounds(sprite)
@@ -232,6 +238,7 @@ def build_entity_image(
         resampling=Image.Resampling.NEAREST if preserve_canvas else Image.Resampling.LANCZOS,
     )
     save_lossless_webp(thumbnail, output_path)
+    return True
 
 
 def crop_image(image: Image.Image, image_rect: tuple[int, int, int, int] | None) -> Image.Image:

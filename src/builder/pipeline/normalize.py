@@ -125,13 +125,26 @@ def normalize_entities(
 
 def build_item_index(entities: list[NormalizedEntity]) -> dict[str, NormalizedEntity]:
     items: dict[str, NormalizedEntity] = {}
-    item_types = {"mineral", "ring", "big_craftable", "footwear", "weapon", "tool", "trinket"}
+    item_types = {
+        "mineral",
+        "ring",
+        "big_craftable",
+        "footwear",
+        "furniture",
+        "weapon",
+        "tool",
+        "trinket",
+    }
     for entity in entities:
         if entity.entity_type == "object":
-            items[item_key(entity)] = entity
+            key = item_key(entity)
+            items[key] = entity
+            items[f"object:{key}"] = entity
     for entity in entities:
         if entity.entity_type in item_types:
-            items.setdefault(item_key(entity), entity)
+            key = item_key(entity)
+            items.setdefault(key, entity)
+            items.setdefault(f"{entity.entity_type}:{key}", entity)
     return items
 
 

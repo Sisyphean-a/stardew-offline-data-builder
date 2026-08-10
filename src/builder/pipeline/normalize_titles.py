@@ -35,7 +35,7 @@ def apply_contextual_display_data(
     if entity.entity_type == "villager_gift":
         return resolve_gift_title(entity, villagers)
     title_builders = {
-        "shop": lambda: shop_title(entity),
+        "shop": lambda: shop_title(entity, items, villagers),
         "tailoring_recipe": lambda: tailoring_title(entity, items),
         "ginger_island": lambda: ginger_island_title(entity),
     }
@@ -87,10 +87,148 @@ def resolve_drop_title(
     return entity.model_copy(update={"name_zh": title, "name_en": None})
 
 
-def shop_title(entity: NormalizedEntity) -> str:
-    identifier = entity.game_id or entity.internal_name or ""
-    name = humanize_identifier(identifier)
-    return f"商店：{name}" if name else "商店：未命名（编号未知）"
+SHOP_TITLES = {
+    "AdventureGuildRecovery": "冒险家公会恢复",
+    "AdventureShop": "冒险家公会商店",
+    "AnimalShop": "玛妮的牧场",
+    "Blacksmith": "铁匠铺",
+    "Bookseller": "书摊老板",
+    "BooksellerTrade": "书摊交易",
+    "BoxOffice": "电影院售票处",
+    "Carpenter": "木匠铺",
+    "Casino": "赌场",
+    "Catalogue": "目录",
+    "ClintUpgrade": "克林特的工具升级",
+    "Concessions": "电影院小卖部",
+    "DesertTrade": "沙漠节交易",
+    "Dwarf": "矮人商店",
+    "FishShop": "威利的鱼店",
+    "Furniture Catalogue": "家具目录",
+    "HatMouse": "帽子老鼠商店",
+    "Hospital": "哈维的诊所",
+    "IceCreamStand": "冰淇淋摊",
+    "IslandTrade": "姜岛交易",
+    "Joja": "Joja 超市",
+    "JojaFurnitureCatalogue": "Joja 家具目录",
+    "JunimoFurnitureCatalogue": "祝尼魔目录",
+    "LostItems": "失物商店",
+    "PetAdoption": "宠物领养",
+    "QiGemShop": "齐先生的宝石商店",
+    "Raccoon": "浣熊商店",
+    "ResortBar": "度假村酒吧",
+    "RetroFurnitureCatalogue": "复古目录",
+    "Saloon": "酒吧",
+    "Sandy": "桑迪的绿洲商店",
+    "SeedShop": "皮埃尔商店",
+    "ShadowShop": "暗影商店",
+    "TrashFurnitureCatalogue": "垃圾目录",
+    "Traveler": "旅行货车",
+    "VolcanoShop": "火山商店",
+    "WizardFurnitureCatalogue": "法师目录",
+}
+
+FESTIVAL_SHOP_TITLES = {
+    "Festival_DanceOfTheMoonlightJellies_Pierre": "月光水母节：皮埃尔",
+    "Festival_EggFestival_Pierre": "复活节：皮埃尔",
+    "Festival_FeastOfTheWinterStar_Pierre": "冬日星盛宴：皮埃尔",
+    "Festival_FestivalOfIce_TravelingMerchant": "冰雪节：旅行商人",
+    "Festival_FlowerDance_Pierre": "花舞节：皮埃尔",
+    "Festival_Luau_Pierre": "夏威夷宴会：皮埃尔",
+    "Festival_NightMarket_DecorationBoat": "夜市：装饰船",
+    "Festival_NightMarket_MagicBoat_Day1": "夜市：魔法船（第1天）",
+    "Festival_NightMarket_MagicBoat_Day2": "夜市：魔法船（第2天）",
+    "Festival_NightMarket_MagicBoat_Day3": "夜市：魔法船（第3天）",
+    "Festival_SpiritsEve_Pierre": "万灵节：皮埃尔",
+    "Festival_StardewValleyFair_StarTokens": "星露谷展览会：星币兑换",
+}
+
+VILLAGER_DISPLAY_NAMES = {
+    "abigail": "阿比盖尔",
+    "alex": "亚历克斯",
+    "caroline": "卡洛琳",
+    "clint": "克林特",
+    "demetrius": "德米特里厄斯",
+    "elliott": "艾利欧特",
+    "emily": "艾米丽",
+    "evelyn": "伊芙琳",
+    "george": "乔治",
+    "gus": "格斯",
+    "haley": "海莉",
+    "harvey": "哈维",
+    "jas": "贾丝",
+    "jodi": "乔迪",
+    "kent": "肯特",
+    "leah": "莉亚",
+    "leo": "里奥",
+    "marnie": "玛妮",
+    "maru": "玛鲁",
+    "pam": "潘姆",
+    "penny": "潘妮",
+    "pierre": "皮埃尔",
+    "robin": "罗宾",
+    "sam": "山姆",
+    "sebastian": "塞巴斯蒂安",
+    "shane": "谢恩",
+    "vincent": "文森特",
+}
+
+LOST_ITEM_TITLES = {
+    "(h)41": "艾米丽的魔法帽",
+    "(h)75": "金色头盔",
+    "(h)92": "???",
+    "(h)gilshat": "吉尔的帽子",
+    "(s)1127": "艾米丽的魔法衬衫",
+}
+
+
+def shop_title(
+    entity: NormalizedEntity,
+    items: dict[str, NormalizedEntity] | None = None,
+    villagers: dict[str, NormalizedEntity] | None = None,
+) -> str:
+    identifier = (entity.game_id or entity.internal_name or "").strip()
+    item_index = items or {}
+    villager_index = villagers or {}
+    if entity.source_file.replace("\\", "/").endswith("/LostItemsShop.json"):
+        return lost_item_title(entity, item_index)
+    if identifier in SHOP_TITLES:
+        return SHOP_TITLES[identifier]
+    if identifier in FESTIVAL_SHOP_TITLES:
+        return FESTIVAL_SHOP_TITLES[identifier]
+    if identifier == "DesertFestival_EggShop":
+        return "沙漠节：蛋摊"
+    if identifier.startswith("DesertFestival_"):
+        owner = identifier.removeprefix("DesertFestival_")
+        owner_key = reference_key(owner)
+        owner_name = displayable_entity_name(
+            villager_index.get(owner_key),
+            VILLAGER_DISPLAY_NAMES.get(owner_key, "村民"),
+            "村民",
+        )
+        return f"沙漠节：{owner_name}"
+    return "特殊商店"
+
+
+def lost_item_title(entity: NormalizedEntity, items: dict[str, NormalizedEntity]) -> str:
+    item_id = str(entity.extra_json.get("ItemId") or "").strip()
+    known_title = LOST_ITEM_TITLES.get(item_id.casefold())
+    if known_title:
+        return known_title
+    item = items.get(item_reference_key(item_id)) or items.get(item_key_value(item_id))
+    return displayable_entity_name(item, item_id, "失物")
+
+
+def item_reference_key(value: str) -> str:
+    prefix = value[: value.find(")") + 1].casefold() if ")" in value else ""
+    entity_type = {
+        "(o)": "object",
+        "(bc)": "big_craftable",
+        "(b)": "footwear",
+        "(f)": "furniture",
+        "(t)": "tool",
+        "(w)": "weapon",
+    }.get(prefix)
+    return f"{entity_type}:{item_key_value(value)}" if entity_type else ""
 
 
 def tailoring_title(
