@@ -53,6 +53,7 @@ def create_real_layout(tmp_path: Path) -> Path:
     write_image(unpacked_dir / "Maps" / "springobjects.png", (32, 16))
     write_image(unpacked_dir / "TileSheets" / "crops.png", (16, 16))
     write_image(unpacked_dir / "Portraits" / "Abigail.png", (32, 64))
+    write_image(unpacked_dir / "Characters" / "Monsters" / "Green Slime.png", (64, 280))
     return game_dir
 
 

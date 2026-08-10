@@ -2,6 +2,41 @@ from __future__ import annotations
 
 from typing import Any
 
+MONSTER_TEXTURE_ALIASES = {
+    "Frost Jelly": "Green Slime",
+    # ShadowGuy can choose either runtime texture, but official Content only ships Shadow Girl.
+    "Shadow Guy": "Shadow Girl",
+    "Skeleton Warrior": "Skeleton",
+    "Sludge": "Green Slime",
+}
+MONSTER_DEFAULT_FRAME_SIZE = (16, 24)
+DEFAULT_VILLAGER_SPRITE_SIZE = (16, 32)
+MONSTER_FRAME_SIZES = {
+    "Big Slime": (32, 32),
+    "Blue Squid": (24, 24),
+    "Crow": (64, 64),
+    "Fireball": (16, 16),
+    "Frog": (16, 16),
+    "Spiker": (16, 16),
+    "Magma Sprite": (16, 16),
+    "Magma Sparker": (16, 16),
+    "Bug": (16, 16),
+    "Spider": (32, 32),
+    "Dwarvish Sentry": (16, 16),
+    "Metal Head": (16, 16),
+    "Squid Kid": (16, 16),
+    "Lava Lurk": (16, 16),
+    "Mummy": (16, 32),
+    "Pepper Rex": (32, 32),
+    "DinoMonster": (32, 32),
+    "Serpent": (32, 32),
+    "Royal Serpent": (32, 32),
+    "Shadow Brute": (16, 32),
+    "Shadow Sniper": (32, 32),
+    "Shooter": (32, 32),
+    "Skeleton": (16, 32),
+    "Skeleton Mage": (16, 32),
+}
 FURNITURE_DEFAULT_SIZES = {
     "chair": (1, 2),
     "bench": (2, 2),
@@ -38,6 +73,9 @@ def apply_special_visual_metadata(
             }
         )
         return True
+    if entity_type == "monster":
+        apply_monster_visual_metadata(attributes, source_id)
+        return True
     if entity_type == "footwear":
         apply_required_sprite(attributes, "Maps/springobjects.png", int(source_id), (16, 16))
         return True
@@ -59,6 +97,25 @@ def apply_special_visual_metadata(
         apply_furniture_sprite(attributes, source_id, fields)
         return True
     return False
+
+
+def apply_monster_visual_metadata(attributes: dict[str, Any], source_id: str) -> None:
+    # Monster records store gameplay fields only. Select the first AnimatedSprite
+    # frame so the atlas itself is never published as the entity image.
+    texture_name = MONSTER_TEXTURE_ALIASES.get(source_id, source_id)
+    frame_width, frame_height = MONSTER_FRAME_SIZES.get(
+        texture_name, MONSTER_DEFAULT_FRAME_SIZE
+    )
+    attributes.update(
+        {
+            "imageSource": f"Characters/Monsters/{texture_name}.png",
+            "spriteIndex": 0,
+            "imageGridCellSize": [frame_width, frame_height],
+            "imageSize": [frame_width, frame_height],
+            "imageMode": "sprite",
+            "imageRequired": True,
+        }
+    )
 
 
 def apply_required_sprite(
@@ -126,8 +183,10 @@ def apply_villager_visual_metadata(
         ]
     elif internal_name:
         attributes["imageSource"] = f"Portraits/{internal_name}.png"
-    # CharacterSubject.DrawPortrait draws only the first 64x64 portrait cell.
+    # CharacterSubject uses a 64x64 portrait, while its sprite fallback uses Size.
     attributes["imageRect"] = [0, 0, 64, 64]
+    sprite_width, sprite_height = villager_sprite_size(attributes)
+    attributes["imageFallbackRect"] = [0, 0, sprite_width, sprite_height]
     attributes["imageMode"] = "portrait"
     attributes["imageRequired"] = True
 
@@ -138,6 +197,20 @@ def is_nonvisual_villager(attributes: dict[str, Any], texture: object) -> bool:
         and attributes.get("SocialTab") == "HiddenAlways"
         and str(attributes.get("CanSocialize")).lower() == "false"
     )
+
+
+def villager_sprite_size(attributes: dict[str, Any]) -> tuple[int, int]:
+    value = attributes.get("Size")
+    if isinstance(value, dict):
+        width, height = value.get("X"), value.get("Y")
+        if (
+            type(width) is int
+            and width > 0
+            and type(height) is int
+            and height > 0
+        ):
+            return width, height
+    return DEFAULT_VILLAGER_SPRITE_SIZE
 
 
 def sprite_index(value: object, fallback: str) -> int:

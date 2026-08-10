@@ -51,6 +51,15 @@ def test_real_official_layout_builds_primary_entities(tmp_path: Path) -> None:
             ("object:24", "crop:24", "fish:128", "villager:Abigail"),
         ).fetchall()
     )
+    hidden_entity = connection.execute(
+        "SELECT id FROM entities WHERE id = 'villager:Abigail'"
+    ).fetchone()
+    hidden_search = connection.execute(
+        "SELECT entity_id FROM entity_search WHERE entity_id = 'villager:Abigail'"
+    ).fetchone()
+    hidden_alias = connection.execute(
+        "SELECT entity_id FROM entity_aliases WHERE entity_id = 'villager:Abigail'"
+    ).fetchone()
     price = connection.execute(
         "SELECT extra_json FROM entities WHERE id = 'object:24'"
     ).fetchone()
@@ -58,13 +67,21 @@ def test_real_official_layout_builds_primary_entities(tmp_path: Path) -> None:
         "SELECT extra_json FROM entities WHERE id = 'crop:24'"
     ).fetchone()
     connection.close()
+    manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    summary = json.loads(
+        (output_dir / "reports" / "build-summary.json").read_text(encoding="utf-8")
+    )
 
     assert rows == {
         "object:24": "防风草",
         "crop:24": "防风草",
         "fish:128": "河豚",
-        "villager:Abigail": "阿比盖尔",
     }
+    assert hidden_entity is None
+    assert hidden_search is None
+    assert hidden_alias is None
+    assert manifest["content"]["villagers"] == 0
+    assert summary["counts"].get("villager", 0) == 0
     assert json.loads(price[0])["Price"] == 40
     crop_attributes = json.loads(crop_image_metadata[0])
     assert crop_attributes["imageSource"] == "Maps/springobjects.png"
@@ -119,10 +136,11 @@ def test_real_legacy_visual_records_build_with_required_images(tmp_path: Path) -
             "footwear-504.webp",
             "big_craftable-0.webp",
             "furniture-0.webp",
+            "monster-Green-Slime.webp",
         )
     )
-    assert coverage["images"]["expected"] == 4
-    assert coverage["images"]["materialized"] == 4
+    assert coverage["images"]["expected"] == 5
+    assert coverage["images"]["materialized"] == 5
     assert errors == []
     assert (output_dir / "stardew-zh-CN.svdata").exists()
 

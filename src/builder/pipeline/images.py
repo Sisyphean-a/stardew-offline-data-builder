@@ -61,9 +61,9 @@ def materialize_entity(
         result.errors.append(image_error(entity, image_source, "未找到官方图片资源"))
         result.entities.append(entity)
         return
-    image_rect = image_rect_for(entity.extra_json, source_path)
     relative_output = Path("images") / f"{sanitize_id(entity.id)}.webp"
     try:
+        image_rect = image_rect_for(entity.extra_json, source_path)
         if image_is_fully_transparent(source_path, image_rect):
             if entity.extra_json.get("imageRequired") is True:
                 raise ValueError("必需图片内容完全透明")
@@ -147,8 +147,13 @@ def image_rect_for(
 ) -> tuple[int, int, int, int] | None:
     image_rect = attributes.get("imageRect")
     if valid_image_rect(image_rect):
-        if attributes.get("imageMode") == "portrait" and not is_portrait_source(source_path):
-            return None
+        if attributes.get("imageMode") == "portrait":
+            if is_portrait_source(source_path):
+                return tuple(int(value) for value in image_rect)
+            fallback_rect = attributes.get("imageFallbackRect")
+            if not valid_image_rect(fallback_rect):
+                raise ValueError("人物备用图片缺少有效裁切矩形")
+            return tuple(int(value) for value in fallback_rect)
         return tuple(int(value) for value in image_rect)
     sprite_index = attributes.get("spriteIndex")
     if isinstance(sprite_index, int) and attributes.get("imageMode") != "full":

@@ -25,6 +25,7 @@ from builder.pipeline.images import materialize_entity_images_with_report
 from builder.pipeline.normalize import normalize_entities
 from builder.pipeline.official_enrichment import enrich_official_entities
 from builder.pipeline.overrides import apply_entity_overrides
+from builder.pipeline.publish import filter_publishable_entities
 from builder.pipeline.quality import quality_errors, quality_status
 from builder.pipeline.release_state import block_fixture_release, block_release
 from builder.pipeline.reports import summarize_entities
@@ -62,6 +63,7 @@ def build_fixture_command(output: str) -> None:
             categories=load_categories(CATEGORIES_PATH),
         )
         entities = enrich_official_entities(entities, official.support)
+        entities = filter_publishable_entities(entities)
         images = materialize_entity_images_with_report(entities, unpacked_dir, output_dir)
         errors = [*official.errors, *images.errors, *quality_errors(images.entities)]
         summary = summarize_entities(images.entities, data_errors=len(errors))
@@ -119,6 +121,7 @@ def build_command(
         enriched = enrich_official_entities(normalized, official.support)
         overrides = load_entity_overrides(OVERRIDES_PATH)
         entities, unknown_overrides = apply_entity_overrides(enriched, overrides)
+        entities = filter_publishable_entities(entities)
         images = materialize_entity_images_with_report(
             entities,
             asset_root=resolved_unpacked_dir,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from builder.models import RawEntity
 from builder.pipeline.normalize import normalize_entities
+from builder.pipeline.publish import filter_publishable_entities
 
 
 def raw(
@@ -24,6 +25,57 @@ def raw(
         attributes=attributes or {},
         source_file=source_file or f"Data/{entity_type}.json",
     )
+
+
+def test_publish_filter_keeps_contextual_records_but_removes_only_explicit_false() -> None:
+    entities = normalize_entities(
+        [
+            raw(
+                "villager",
+                "Abigail",
+                name="阿比盖尔",
+                locale="zh-CN",
+                attributes={"CanSocialize": False},
+            ),
+            raw(
+                "villager",
+                "Leo",
+                name="里奥",
+                locale="zh-CN",
+                attributes={"CanSocialize": True},
+            ),
+            raw("villager", "Missing", name="缺失值", attributes={}),
+            raw("villager", "Null", name="空值", attributes={"CanSocialize": None}),
+            raw("villager", "TextFalse", name="文本假值", attributes={"CanSocialize": "false"}),
+            raw("villager", "Invalid", name="非法值", attributes={"CanSocialize": "0"}),
+            raw("villager", "Zero", name="数字零", attributes={"CanSocialize": 0}),
+            raw("npc_schedule", "Abigail:Wed_6", name="Abigail:Wed_6"),
+            raw("villager_gift", "Abigail", name="Abigail"),
+        ],
+        aliases={"villager:Abigail": ["阿比"]},
+        categories={},
+    )
+    by_id = {entity.id: entity for entity in entities}
+
+    assert by_id["villager:Abigail"].extra_json["CanSocialize"] is False
+    assert by_id["villager:Abigail"].aliases == ["阿比"]
+    assert "阿比盖尔" in by_id["npc_schedule:Abigail:Wed_6"].name_zh
+    assert by_id["villager_gift:Abigail"].name_zh.startswith("阿比盖尔")
+
+    published = filter_publishable_entities(entities)
+    published_ids = {entity.id for entity in published}
+
+    assert "villager:Abigail" not in published_ids
+    assert "villager:TextFalse" not in published_ids
+    assert {
+        "villager:Leo",
+        "villager:Missing",
+        "villager:Null",
+        "villager:Invalid",
+        "villager:Zero",
+        "npc_schedule:Abigail:Wed_6",
+        "villager_gift:Abigail",
+    } <= published_ids
 
 
 def test_schedule_titles_follow_context_rules_and_hide_technical_english() -> None:
@@ -107,6 +159,7 @@ def test_gift_titles_cover_universal_preferences_and_avatar_metadata() -> None:
                 attributes={
                     "imageSource": "Portraits/Abigail.png",
                     "imageRect": [0, 0, 64, 64],
+                    "imageFallbackRect": [0, 0, 16, 32],
                     "imageMode": "portrait",
                 },
                 source_file="Data/Characters.json",
@@ -125,6 +178,7 @@ def test_gift_titles_cover_universal_preferences_and_avatar_metadata() -> None:
     gift_extra = by_id["villager_gift:Abigail"].extra_json
     assert gift_extra["imageSource"] == "Portraits/Abigail.png"
     assert gift_extra["imageRect"] == [0, 0, 64, 64]
+    assert gift_extra["imageFallbackRect"] == [0, 0, 16, 32]
     assert gift_extra["imageMode"] == "portrait"
     assert gift_extra["imageRequired"] is False
     assert gift_extra["_provenance"] == {

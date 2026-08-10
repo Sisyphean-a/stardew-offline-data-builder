@@ -40,7 +40,7 @@ def test_legacy_visual_records_use_their_real_sprite_metadata(tmp_path: Path) ->
     }
 
 
-def test_villager_character_fallback_keeps_its_actual_canvas(tmp_path: Path) -> None:
+def test_villager_character_fallback_uses_its_first_sprite_frame(tmp_path: Path) -> None:
     entities = normalize_entities(
         parse_entities(
             "villager",
@@ -51,7 +51,7 @@ def test_villager_character_fallback_keeps_its_actual_canvas(tmp_path: Path) -> 
         categories={},
     )
     asset_root = tmp_path / "assets"
-    write_image(asset_root / "Characters" / "Mariner.png", (16, 32), (2, 3, 10, 24))
+    write_image(asset_root / "Characters" / "Mariner.png", (64, 448), (2, 3, 10, 24))
 
     result = materialize_entity_images_with_report(entities, asset_root, tmp_path / "output")
 
@@ -135,6 +135,126 @@ def test_achievements_share_the_official_collections_cursor_tile() -> None:
     assert {tuple(entity.extra_json["imageRect"]) for entity in entities} == {
         (192, 128, 64, 64)
     }
+
+
+def test_legacy_monster_texture_aliases_match_official_reused_assets() -> None:
+    entities = normalize_entities(
+        parse_entities(
+            "monster",
+            {
+                name: f"1/1/0/0/false/1000/66 .5/1/.01/4/2/.00/true/3/{name}"
+                for name in ("Frost Jelly", "Shadow Guy", "Skeleton Warrior", "Sludge")
+            },
+            {},
+        ),
+        aliases={},
+        categories={},
+    )
+
+    assert {
+        entity.id: entity.extra_json["imageSource"]
+        for entity in entities
+        if entity.entity_type == "monster"
+    } == {
+        "monster:Frost-Jelly": "Characters/Monsters/Green Slime.png",
+        "monster:Shadow-Guy": "Characters/Monsters/Shadow Girl.png",
+        "monster:Skeleton-Warrior": "Characters/Monsters/Skeleton.png",
+        "monster:Sludge": "Characters/Monsters/Green Slime.png",
+    }
+
+
+def test_legacy_monsters_use_their_official_character_texture(tmp_path: Path) -> None:
+    entities = normalize_entities(
+        parse_entities(
+            "monster",
+            {"Green Slime": "24/5/0/0/false/1000/66 .5/1/.01/4/2/.00/true/3/Green Slime"},
+            {"Green Slime": "24/5/0/0/false/1000/66 .5/1/.01/4/2/.00/true/3/绿色史莱姆"},
+        ),
+        aliases={},
+        categories={},
+    )
+    monster = next(entity for entity in entities if entity.entity_type == "monster")
+
+    assert monster.extra_json["imageSource"] == "Characters/Monsters/Green Slime.png"
+    assert monster.extra_json["spriteIndex"] == 0
+    assert monster.extra_json["imageGridCellSize"] == [16, 24]
+    assert monster.extra_json["imageSize"] == [16, 24]
+    assert monster.extra_json["imageMode"] == "sprite"
+    assert monster.extra_json["imageRequired"] is True
+
+    asset_root = tmp_path / "assets"
+    write_image(
+        asset_root / "Characters" / "Monsters" / "Green Slime.png",
+        (64, 280),
+        (0, 0, 16, 24),
+    )
+    result = materialize_entity_images_with_report([monster], asset_root, tmp_path / "output")
+
+    assert result.errors == []
+    assert result.entities[0].image_path == "images/monster-Green-Slime.webp"
+    output = Image.open(tmp_path / "output" / "images" / "monster-Green-Slime.webp")
+    assert output.size == (16, 24)
+
+
+def test_missing_monster_texture_is_reported(tmp_path: Path) -> None:
+    entities = normalize_entities(
+        parse_entities(
+            "monster",
+            {"Green Slime": "1/1/0/0/false/1000/66 .5/1/.01/4/2/.00/true/3/Green Slime"},
+            {},
+        ),
+        aliases={},
+        categories={},
+    )
+    monster = next(item for item in entities if item.entity_type == "monster")
+
+    result = materialize_entity_images_with_report(
+        [monster], tmp_path / "assets", tmp_path / "output"
+    )
+
+    assert result.entities[0].image_path is None
+    assert result.errors[0]["asset"] == "Characters/Monsters/Green Slime.png"
+
+
+@pytest.mark.parametrize(
+    ("monster_name", "frame_size"),
+    [
+        ("Big Slime", (32, 32)),
+        ("Blue Squid", (24, 24)),
+        ("Crow", (64, 64)),
+        ("Fireball", (16, 16)),
+        ("Frog", (16, 16)),
+        ("Magma Sprite", (16, 16)),
+        ("Magma Sparker", (16, 16)),
+        ("Dwarvish Sentry", (16, 16)),
+        ("Spider", (32, 32)),
+        ("Metal Head", (16, 16)),
+        ("Squid Kid", (16, 16)),
+        ("Mummy", (16, 32)),
+        ("Spiker", (16, 16)),
+        ("Pepper Rex", (32, 32)),
+        ("Shadow Sniper", (32, 32)),
+        ("Skeleton Mage", (16, 32)),
+    ],
+)
+def test_monster_metadata_uses_real_animated_sprite_frame_size(
+    monster_name: str, frame_size: tuple[int, int]
+) -> None:
+    entities = normalize_entities(
+        parse_entities(
+            "monster",
+            {monster_name: f"1/1/0/0/false/1000/66 .5/1/.01/4/2/.00/true/3/{monster_name}"},
+            {},
+        ),
+        aliases={},
+        categories={},
+    )
+    entity = next(item for item in entities if item.entity_type == "monster")
+
+    assert entity.extra_json["spriteIndex"] == 0
+    assert entity.extra_json["imageGridCellSize"] == list(frame_size)
+    assert entity.extra_json["imageSize"] == list(frame_size)
+    assert entity.extra_json["imageMode"] == "sprite"
 
 
 def test_fully_transparent_optional_image_is_not_materialized(tmp_path: Path) -> None:

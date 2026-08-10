@@ -9,6 +9,7 @@ from builder.pipeline.provenance import merge_provenance
 IMAGE_METADATA_KEYS = (
     "imageSource",
     "imageFallbackSources",
+    "imageFallbackRect",
     "imageRect",
     "spriteIndex",
     "imageGridCellSize",
@@ -17,7 +18,13 @@ IMAGE_METADATA_KEYS = (
     "imageRequired",
     "imageAvailability",
 )
-AVATAR_METADATA_KEYS = ("imageSource", "imageRect", "imageMode", "imageFallbackSources")
+AVATAR_METADATA_KEYS = (
+    "imageSource",
+    "imageRect",
+    "imageFallbackRect",
+    "imageMode",
+    "imageFallbackSources",
+)
 
 
 def inherit_harvest_item_image(
