@@ -20,9 +20,9 @@ code-paths:
 1. `commands/build.py:build_command` 解析游戏目录和解包目录，加载官方实体与支持数据。
 2. `sources/game_source.py:load_game_data_from_unpacked_dir` 发现 `Data/`、角色日程等官方 JSON，调用 `parsers/official.py` 解析，再合并 `Strings/*.json` 的英文和官方中文；读取失败和解析失败保留在 `GameSourceLoad.errors`。
 3. `pipeline/normalize.py:normalize_entities` 以 `<entity_type>:<official source id>` 形成稳定 ID，合并语言、别名、分类、来源和翻译状态。
-4. `pipeline/official_enrichment.py:enrich_official_entities` 仅从官方支持资产建立 `officialDerived` 和 `_provenance.official` 关联；`pipeline/overrides.py` 之后才应用显式可编辑覆盖。
+4. pipeline 把官方字段、跨表关系、可验证计算和受控补充事实规范化为 `player-facts-v1` 的事实、关系、条件和逐 claim 证据；展示覆盖之后应用且不能改写事实/证据。schema 4 的 `officialDerived` 不再是发布 API。
 5. `pipeline/images.py:materialize_entity_images_with_report` 按解析器写入的官方图片元数据裁切、缩略和 WebP 化，并返回结构化资源错误。
-6. `commands/build_output.py:write_build_output` 生成 SQLite、报告、manifest；质量不通过时保留诊断产物、写发布阻断标记并以质量退出码结束，通过后才创建 `.svdata`。
+6. `commands/build_output.py:write_build_output` 生成 schema 5 SQLite、图片清单、报告和 manifest 2；质量不通过时保留诊断产物、写发布阻断标记并以质量退出码结束，通过后才创建 `.svdata`。
 7. `commands/package.py:package_existing_output` 重新校验发布状态、artifact metadata 和数据库图片引用，用临时 ZIP 校验后原子替换正式包。
 
 ## 模块职责
@@ -38,7 +38,8 @@ code-paths:
 
 - `config.py` 的 `ENTITY_TYPE_LABELS` 是当前支持实体类型及其中文展示名的代码清单；缺少必需类型或中文标签时质量门禁失败。
 - `pipeline/normalize.py` 将纯数字中文显示名判为 `invalid`；不可本地化的技术记录才使用 `not_applicable`。
-- 必需图片由 `extra_json.imageRequired` 声明。`parsers/legacy_visuals.py` 为成就、鞋类、大型可制作物、家具等旧格式建立裁切元数据；无源或越界裁切都会形成错误。
+- 每个实体使用明确视觉状态和分类必需名单；`parsers/legacy_visuals.py` 为旧格式建立有版本视觉规则。无源、碰撞、缺裁切、越界、解码/透明错误、哈希不一致或待复核都会阻断发布。
+- schema 5 的稳定表启用外键并提供事实、双向关系、证据、条件、视觉、卡片和筛选查询所需索引；预计算投影由规范事实生成并校验，不成为第二事实源。
 - `database/writer.py` 通过 `stardew.db.tmp` 写入后替换正式数据库；`commands/package.py` 通过临时归档校验后替换正式 `.svdata`。
 - `pipeline/release_state.py` 用 `.release-blocked.json` 隔离失败构建和 fixture 输出，`package` 不得绕过该标记。
 
