@@ -27,7 +27,7 @@ def enrich_official_entities(
     support: OfficialSupportData,
 ) -> list[NormalizedEntity]:
     by_id = {entity.id: entity for entity in entities}
-    references = build_reference_index(entities, support, by_id)
+    references = build_reference_index(entities, support, by_id, allow_legacy=True)
     return [enrich_entity(entity, references) for entity in entities]
 
 

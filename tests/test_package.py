@@ -33,7 +33,7 @@ def test_build_writes_manifest_and_svdata(tmp_path: Path, monkeypatch) -> None:
     result = runner.invoke(
         app,
         [
-            "build",
+            "build-v4-legacy",
             "--game-dir",
             str(game_dir),
             "--output",
@@ -95,7 +95,7 @@ def test_build_is_repeatable_with_fixed_generated_at(tmp_path: Path, monkeypatch
     first = runner.invoke(
         app,
         [
-            "build",
+            "build-v4-legacy",
             "--game-dir",
             str(game_dir),
             "--output",
@@ -105,7 +105,7 @@ def test_build_is_repeatable_with_fixed_generated_at(tmp_path: Path, monkeypatch
     second = runner.invoke(
         app,
         [
-            "build",
+            "build-v4-legacy",
             "--game-dir",
             str(game_dir),
             "--output",
@@ -153,7 +153,7 @@ def test_build_manifest_and_summary_include_extra_counts(tmp_path: Path, monkeyp
     result = runner.invoke(
         app,
         [
-            "build",
+            "build-v4-legacy",
             "--game-dir",
             str(game_dir),
             "--output",
@@ -184,7 +184,7 @@ def test_failed_standalone_package_preserves_previous_canonical(tmp_path: Path) 
     output_dir = tmp_path / "output"
     initial = runner.invoke(
         app,
-        ["build", "--game-dir", str(game_dir), "--output", str(output_dir)],
+        ["build-v4-legacy", "--game-dir", str(game_dir), "--output", str(output_dir)],
     )
     package_path = output_dir / "stardew-zh-cn.svdata"
     initial_hash = sha256_file(package_path)

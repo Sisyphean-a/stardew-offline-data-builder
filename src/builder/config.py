@@ -4,7 +4,8 @@ from pathlib import Path
 
 APP_NAME = "stardew-offline-data-builder"
 DEFAULT_LOCALE = "zh-CN"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
+LEGACY_SCHEMA_VERSION = 4
 DEFAULT_FIXTURE_ROOT = Path("tests/fixtures/game-data")
 BUILD_DB_FILENAME = "stardew.db"
 TEMP_DB_SUFFIX = ".tmp"

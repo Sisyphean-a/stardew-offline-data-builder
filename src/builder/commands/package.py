@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -19,8 +20,10 @@ from builder.pipeline.artifact_metadata import (
 )
 from builder.pipeline.package_integrity import referenced_image_files
 from builder.pipeline.release_state import validate_release_unblocked
+from builder.pipeline.schema5_artifacts import validate_schema5_artifacts
+from builder.pipeline.schema5_writer import validate_schema5_database_output
 from builder.utils.hashing import sha256_file
-from builder.utils.json_io import dump_json_file
+from builder.utils.json_io import dump_json_file, load_json_file
 
 
 def write_manifest(
@@ -69,6 +72,69 @@ def metadata_from_summary(
     )
 
 
+def create_schema5_svdata_package(
+    output_dir: Path,
+    locale: str,
+    generated_at: str,
+    db_path: Path,
+    manifest_path: Path,
+    reports_dir: Path,
+    conformance_path: Path,
+) -> Path:
+    """Package a validated schema-5 output without consulting legacy columns."""
+    manifest = load_json_file(manifest_path)
+    conformance = load_json_file(conformance_path)
+    if not isinstance(manifest, dict) or not isinstance(conformance, dict):
+        raise ValueError("schema 5 发布元数据无效")
+    validate_schema5_artifacts(output_dir, manifest.get("artifacts"))
+    validate_schema5_database_output(db_path, output_dir, manifest, conformance)
+    package_name = PACKAGE_BASENAME.format(locale=locale.lower())
+    package_path = output_dir / package_name
+    entries = package_entries(
+        output_dir,
+        db_path,
+        manifest_path,
+        reports_dir,
+        referenced_schema5_image_files(db_path, output_dir),
+        extra_entries=[(conformance_path, conformance_path.name)],
+    )
+    temp_path = temporary_package_path(output_dir, package_path.stem)
+    try:
+        write_package_archive(temp_path, entries, zip_timestamp(generated_at))
+        verify_package_archive(temp_path, entries)
+        temp_path.replace(package_path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+    return package_path
+
+
+def referenced_schema5_image_files(db_path: Path, output_dir: Path) -> list[Path]:
+    connection = sqlite3.connect(db_path)
+    try:
+        rows = connection.execute(
+            "SELECT id, relative_path, sha256 FROM visuals "
+            "WHERE relative_path IS NOT NULL AND trim(relative_path) != ''"
+        ).fetchall()
+    finally:
+        connection.close()
+    files: list[Path] = []
+    root = output_dir.resolve()
+    for visual_id, relative_path, expected_hash in rows:
+        if not isinstance(relative_path, str) or not relative_path:
+            raise ValueError(f"schema 5 视觉路径无效：{visual_id}")
+        path = (output_dir / relative_path).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError as exc:
+            raise ValueError(f"schema 5 视觉路径越界：{visual_id}") from exc
+        if not path.is_file():
+            raise ValueError(f"schema 5 视觉文件缺失：{visual_id}")
+        if not isinstance(expected_hash, str) or sha256_file(path) != expected_hash:
+            raise ValueError(f"schema 5 视觉文件哈希不匹配：{visual_id}")
+        files.append(path)
+    return sorted(set(files), key=lambda path: path.as_posix())
+
+
 def create_svdata_package(
     output_dir: Path,
     locale: str,
@@ -103,13 +169,20 @@ def package_entries(
     manifest_path: Path,
     reports_dir: Path,
     image_files: list[Path],
+    extra_entries: list[tuple[Path, str]] | None = None,
 ) -> list[tuple[Path, str]]:
     resolved_output_dir = output_dir.resolve()
     reports = [
         (path, f"{REPORTS_DIRNAME}/{path.name}") for path in sorted(reports_dir.glob("*.json"))
     ]
     images = [(path, path.relative_to(resolved_output_dir).as_posix()) for path in image_files]
-    return [(manifest_path, MANIFEST_FILENAME), (db_path, db_path.name), *reports, *images]
+    return [
+        (manifest_path, MANIFEST_FILENAME),
+        (db_path, db_path.name),
+        *reports,
+        *images,
+        *(extra_entries or []),
+    ]
 
 
 def temporary_package_path(output_dir: Path, package_stem: str) -> Path:
@@ -163,7 +236,16 @@ def package_existing_output(
     output_dir: Path,
     locale: str,
 ) -> Path:
+    manifest_path = output_dir / MANIFEST_FILENAME
+    manifest = load_json_file(manifest_path) if manifest_path.is_file() else None
+    if isinstance(manifest, dict) and manifest.get("schemaVersion") == 5:
+        return package_existing_schema5_output(output_dir, locale, manifest)
     validate_release_unblocked(output_dir)
+    if isinstance(manifest, dict) and manifest.get("schemaVersion") == 4:
+        # Keep concrete integrity diagnostics observable while still refusing
+        # to create an ordinary distributable from a recovery-only package.
+        referenced_image_files(output_dir / "stardew.db", output_dir)
+        raise ValueError("schema 4 仅可作为显式恢复资产，不能通过普通 package 发布")
     db_path = output_dir / "stardew.db"
     reports_dir = output_dir / REPORTS_DIRNAME
     metadata = validate_artifact_metadata(read_artifact_metadata(db_path), locale)
@@ -182,6 +264,74 @@ def package_existing_output(
         db_path=db_path,
         manifest_path=manifest_path,
         reports_dir=reports_dir,
+    )
+
+
+def package_existing_schema5_output(
+    output_dir: Path,
+    locale: str,
+    manifest: dict[str, object],
+) -> Path:
+    validate_release_unblocked(output_dir)
+    if manifest.get("manifestVersion") != 2 or manifest.get("contentContract") != "player-facts-v1":
+        raise ValueError("schema 5 manifest 契约无效")
+    if manifest.get("language") != locale:
+        raise ValueError("schema 5 manifest 语言与请求不一致")
+    if manifest.get("publishable") is not True:
+        raise ValueError("schema 5 构建不可发布")
+    database = manifest.get("database")
+    if not isinstance(database, dict):
+        raise ValueError("schema 5 manifest 缺少 database")
+    database_file = database.get("file")
+    database_hash = database.get("sha256")
+    if not isinstance(database_file, str) or not isinstance(database_hash, str):
+        raise ValueError("schema 5 database 元数据无效")
+    db_path = (output_dir / database_file).resolve()
+    try:
+        db_path.relative_to(output_dir.resolve())
+    except ValueError as exc:
+        raise ValueError("schema 5 database 路径越界") from exc
+    if not db_path.is_file() or sha256_file(db_path) != database_hash:
+        raise ValueError("schema 5 database 哈希不匹配")
+    connection = sqlite3.connect(db_path)
+    try:
+        if connection.execute("PRAGMA user_version").fetchone()[0] != 5:
+            raise ValueError("schema 5 database 版本无效")
+        if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+            raise ValueError("schema 5 database 完整性校验失败")
+        if connection.execute("PRAGMA foreign_key_check").fetchall():
+            raise ValueError("schema 5 database 外键校验失败")
+    finally:
+        connection.close()
+    validate_schema5_artifacts(output_dir, manifest.get("artifacts"))
+    conformance_path = output_dir / "schema5-conformance.json"
+    if not conformance_path.is_file():
+        raise ValueError("schema 5 conformance 文件缺失")
+    conformance = load_json_file(conformance_path)
+    if (
+        not isinstance(conformance, dict)
+        or conformance.get("publishable") is not True
+        or conformance.get("schemaVersion") != 5
+        or conformance.get("manifestVersion") != 2
+        or conformance.get("contentContract") != "player-facts-v1"
+        or conformance.get("databaseSha256") != database_hash
+    ):
+        raise ValueError("schema 5 conformance 不可发布")
+    reports_dir = output_dir / REPORTS_DIRNAME
+    if not reports_dir.is_dir() or not list(reports_dir.glob("*.json")):
+        raise ValueError("schema 5 reports 文件缺失")
+    validate_schema5_database_output(db_path, output_dir, manifest, conformance)
+    generated_at = manifest.get("generatedAt")
+    if not isinstance(generated_at, str):
+        raise ValueError("schema 5 manifest 缺少 generatedAt")
+    return create_schema5_svdata_package(
+        output_dir,
+        locale,
+        generated_at,
+        db_path,
+        output_dir / MANIFEST_FILENAME,
+        output_dir / REPORTS_DIRNAME,
+        conformance_path,
     )
 
 

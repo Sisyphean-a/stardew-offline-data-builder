@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 from builder.cli import app
 from builder.commands.package import package_existing_output
-from builder.config import EXIT_PACKAGE, SCHEMA_VERSION
+from builder.config import EXIT_PACKAGE, LEGACY_SCHEMA_VERSION
 from builder.database.writer import read_artifact_metadata, write_database
 from builder.models import BuildSummary, NormalizedEntity
 from builder.pipeline.artifact_metadata import build_artifact_metadata
@@ -36,7 +36,7 @@ def test_artifact_metadata_lists_all_types_with_labels() -> None:
     metadata = build_artifact_metadata(summary, "zh-CN", FIXED_TIME, "hash", "1.6")
 
     entity_types = metadata["content"]["entityTypes"]
-    assert metadata["schemaVersion"] == SCHEMA_VERSION
+    assert metadata["schemaVersion"] == LEGACY_SCHEMA_VERSION
     assert metadata["quality"]["status"] == "passed"
     assert {entry["id"]: entry["displayName"] for entry in entity_types} == {
         "achievement": "成就",
@@ -105,6 +105,23 @@ def test_package_rejects_failed_or_wrong_locale_metadata(tmp_path: Path) -> None
         package_existing_output(output_dir, "en")
 
 
+def test_package_rejects_schema4_manifest_as_ordinary_release(tmp_path: Path) -> None:
+    output_dir = write_output(
+        tmp_path,
+        BuildSummary(entities=1, missing_translations=0, counts_by_type={"object": 1}),
+        [normalized_entity("object:24", "object")],
+    )
+    manifest = {
+        "manifestVersion": 1,
+        "schemaVersion": LEGACY_SCHEMA_VERSION,
+        "language": "zh-CN",
+    }
+    (output_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="schema 4.*普通 package"):
+        package_existing_output(output_dir, "zh-CN")
+
+
 def test_package_rejects_old_or_missing_metadata(tmp_path: Path) -> None:
     output_dir = write_output(
         tmp_path,
@@ -113,7 +130,7 @@ def test_package_rejects_old_or_missing_metadata(tmp_path: Path) -> None:
     )
     db_path = output_dir / "stardew.db"
     metadata = read_artifact_metadata(db_path)
-    metadata["schemaVersion"] = SCHEMA_VERSION - 1
+    metadata["schemaVersion"] = LEGACY_SCHEMA_VERSION - 1
     update_metadata(db_path, json.dumps(metadata, ensure_ascii=False))
 
     with pytest.raises(ValueError, match="版本"):

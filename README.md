@@ -18,6 +18,8 @@ python -m builder build `
   --output ".\dist"
 ```
 
+`build` 生成正式 manifest 2 / schema 5 / `player-facts-v1` 候选，并在类型化事实、来源证据、视觉、外键和覆盖门禁未通过时保留失败诊断而不替换旧输出。旧 schema 4 只能通过显式的 `build-v4-legacy` 生成迁移基线，不能作为新版 App 的普通数据包。
+
 多安装、非 Steam 安装或自动发现失败时，三个命令都可显式指定正版游戏目录：
 
 ```powershell
@@ -27,6 +29,7 @@ python -m builder unpack `
 
 默认读取 `<game-dir>/Content (unpacked)`。若目录不存在有效 JSON，则调用游戏目录中的
 `StardewXnbHack`；也可通过 `--unpacked-dir` 指定已解包目录，通过 `--xnb-hack` 指定工具。
+候选输出中的 SQLite 只包含类型化实体、事实槽/事实项、条件、来源定位、证据、关系、视觉、卡片、facet 和 FTS 表，不把 `officialDerived` 作为 App 读取源。
 
 ## 官方数据关联
 
@@ -38,10 +41,9 @@ python -m builder unpack `
 - `Data/Machines.json`：机器输入标签、产物和处理时间；
 - 料理与制作配方：原料和物品用途反向索引。
 
-直接字段保留在实体 `extra_json` 根层；标准化和跨表派生字段写入
-`extra_json.officialDerived`。参与关联的官方文件记录在 `extra_json._provenance.official`。
+schema 5 构建阶段从解析后的结构化官方属性和支持文件投影 typed facts；每条事实保留来源定位、条件和派生转换证据。schema 4 的 `extra_json.officialDerived` 只留在显式迁移基线/legacy builder 路径，不是新版 App 的数据源。
 
-官方资产没有结构化表达的攻略标签、自然语言事件摘要等内容不会被推测或伪造。
+官方资产没有结构化表达的攻略标签、自然语言事件摘要等内容不会被推测或伪造；无法确认的核心问题写成带证据的 `unknown` 或 `not_collected`，而不是猜测固定值。
 
 ## 产物
 
@@ -50,6 +52,7 @@ dist/
 ├── stardew.db
 ├── manifest.json
 ├── stardew-zh-cn.svdata
+├── schema5-conformance.json
 ├── images/
 └── reports/
     ├── build-summary.json

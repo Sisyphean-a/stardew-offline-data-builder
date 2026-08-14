@@ -183,8 +183,8 @@ def apply_villager_visual_metadata(
         ]
     elif internal_name:
         attributes["imageSource"] = f"Portraits/{internal_name}.png"
-    # CharacterSubject uses a 64x64 portrait, while its sprite fallback uses Size.
-    attributes["imageRect"] = [0, 0, 64, 64]
+    # Official Portraits assets are 32x64; the sprite fallback uses Size.
+    attributes["imageRect"] = [0, 0, 32, 64]
     sprite_width, sprite_height = villager_sprite_size(attributes)
     attributes["imageFallbackRect"] = [0, 0, sprite_width, sprite_height]
     attributes["imageMode"] = "portrait"

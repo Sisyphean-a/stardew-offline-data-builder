@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 
-from builder.models import NormalizedEntity
+from builder.models import NormalizedEntity, production_attributes, structured_attributes
 from builder.pipeline.official_values import (
     entity_ids_for_item,
     item_category,
@@ -32,10 +32,12 @@ class ItemReferenceResolver:
     def create(
         cls,
         by_id: dict[str, NormalizedEntity],
+        *,
+        allow_legacy: bool = False,
     ) -> ItemReferenceResolver:
         return cls(
             by_id=by_id,
-            category_index=build_category_index(by_id),
+            category_index=build_category_index(by_id, allow_legacy=allow_legacy),
             internal_name_index=build_internal_name_index(by_id),
             machine_entity_ids=frozenset(
                 entity_id
@@ -111,32 +113,40 @@ def matching_positive_ids(
 
 def build_tag_index(
     by_id: dict[str, NormalizedEntity],
+    *,
+    allow_legacy: bool = False,
 ) -> dict[str, set[str]]:
     index: dict[str, set[str]] = defaultdict(set)
     for entity_id, entity in by_id.items():
-        for tag in tags_for_entity(entity, by_id):
+        for tag in tags_for_entity(entity, by_id, allow_legacy=allow_legacy):
             index[tag].add(entity_id)
     return index
 
 
 def build_fish_tag_index(
     by_id: dict[str, NormalizedEntity],
+    *,
+    allow_legacy: bool = False,
 ) -> dict[str, set[str]]:
     result: dict[str, set[str]] = {}
     for entity_id, entity in by_id.items():
         if entity.entity_type != "fish" or not entity.game_id:
             continue
         item = by_id.get(f"object:{entity.game_id}")
-        result[entity_id] = tags_for_entity(item, by_id) if item else set()
+        result[entity_id] = (
+            tags_for_entity(item, by_id, allow_legacy=allow_legacy) if item else set()
+        )
     return result
 
 
 def build_category_index(
     by_id: dict[str, NormalizedEntity],
+    *,
+    allow_legacy: bool = False,
 ) -> dict[int, set[str]]:
     index: dict[int, set[str]] = defaultdict(set)
     for entity_id, entity in by_id.items():
-        category = entity_category(entity, by_id)
+        category = entity_category(entity, by_id, allow_legacy=allow_legacy)
         if category is not None:
             index[category].add(entity_id)
     return index
@@ -155,13 +165,19 @@ def build_internal_name_index(
 def entity_category(
     entity: NormalizedEntity,
     by_id: dict[str, NormalizedEntity],
+    *,
+    allow_legacy: bool = False,
 ) -> int | None:
-    category = entity.extra_json.get("Category")
+    attributes = structured_attributes(entity) if allow_legacy else production_attributes(entity)
+    category = attributes.get("Category")
     if isinstance(category, int):
         return category
     if entity.entity_type == "fish" and entity.game_id:
         item = by_id.get(f"object:{entity.game_id}")
-        inherited = item.extra_json.get("Category") if item else None
+        inherited_attributes = (
+            structured_attributes(item) if allow_legacy else production_attributes(item)
+        ) if item else {}
+        inherited = inherited_attributes.get("Category")
         return inherited if isinstance(inherited, int) else None
     return None
 
@@ -169,17 +185,26 @@ def entity_category(
 def tags_for_entity(
     entity: NormalizedEntity,
     by_id: dict[str, NormalizedEntity],
+    *,
+    allow_legacy: bool = False,
 ) -> set[str]:
-    tags = entity_context_tags(entity)
+    tags = entity_context_tags(entity, allow_legacy=allow_legacy)
     if entity.entity_type == "fish" and entity.game_id:
         item = by_id.get(f"object:{entity.game_id}")
-        tags.update(entity_context_tags(item) if item else set())
+        tags.update(
+            entity_context_tags(item, allow_legacy=allow_legacy) if item else set()
+        )
     return tags
 
 
-def entity_context_tags(entity: NormalizedEntity) -> set[str]:
-    tags = string_set(entity.extra_json.get("ContextTags"))
-    category = entity.extra_json.get("Category")
+def entity_context_tags(
+    entity: NormalizedEntity,
+    *,
+    allow_legacy: bool = False,
+) -> set[str]:
+    attributes = structured_attributes(entity) if allow_legacy else production_attributes(entity)
+    tags = string_set(attributes.get("ContextTags"))
+    category = attributes.get("Category")
     if isinstance(category, int) and category in CATEGORY_TAGS:
         tags.add(CATEGORY_TAGS[category])
     if entity.entity_type in OBJECT_ENTITY_TYPES and entity.game_id:

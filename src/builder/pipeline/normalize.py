@@ -166,6 +166,11 @@ def build_normalized_entity(
     name_zh = fallback_name(primary, chinese_name or pick_group_value(english, [], "name"))
     extra_json = dict(primary.attributes)
     extra_json["_provenance"] = build_provenance(group)
+    source_attributes = {
+        key: value
+        for key, value in primary.attributes.items()
+        if key not in {"legacyFields", "legacyValue", "officialDerived"}
+    }
     return NormalizedEntity(
         id=entity_id,
         entity_type=primary.entity_type,
@@ -178,6 +183,7 @@ def build_normalized_entity(
         category=categories.get(entity_id),
         translation_status=translation_status(primary, chinese_name),
         extra_json=extra_json,
+        source_attributes=source_attributes,
         source_file=primary.source_file,
         aliases=aliases.get(entity_id, []),
         keywords=[categories[entity_id]] if entity_id in categories else [],

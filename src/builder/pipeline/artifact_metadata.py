@@ -3,9 +3,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from builder import __version__
-from builder.config import ENTITY_TYPE_LABELS, PRIMARY_ENTITY_TYPES, SCHEMA_VERSION
+from builder.config import ENTITY_TYPE_LABELS, LEGACY_SCHEMA_VERSION, PRIMARY_ENTITY_TYPES
 from builder.models import BuildSummary
 from builder.pipeline.quality import quality_payload
+
+SCHEMA_VERSION = LEGACY_SCHEMA_VERSION
 
 ARTIFACT_METADATA_KEY = "artifact_metadata"
 

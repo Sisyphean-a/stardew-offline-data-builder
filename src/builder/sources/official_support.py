@@ -12,6 +12,9 @@ SUPPORT_FILES = {
     "machines": ("Machines.json", dict),
     "shops": ("Shops.json", dict),
 }
+OPTIONAL_SUPPORT_FILES = {
+    "monster_slayer_quests": ("MonsterSlayerQuests.json", dict),
+}
 
 
 @dataclass(frozen=True)
@@ -20,6 +23,7 @@ class OfficialSupportData:
     locations: dict[str, dict[str, Any]] = field(default_factory=dict)
     machines: dict[str, dict[str, Any]] = field(default_factory=dict)
     shops: dict[str, dict[str, Any]] = field(default_factory=dict)
+    monster_slayer_quests: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 def load_official_support_data(unpacked_dir: Path) -> OfficialSupportData:
@@ -27,11 +31,17 @@ def load_official_support_data(unpacked_dir: Path) -> OfficialSupportData:
     loaded: dict[str, object] = {}
     for field_name, (filename, expected_type) in SUPPORT_FILES.items():
         loaded[field_name] = load_support_file(data_dir / filename, expected_type)
+    for field_name, (filename, expected_type) in OPTIONAL_SUPPORT_FILES.items():
+        path = data_dir / filename
+        loaded[field_name] = (
+            load_support_file(path, expected_type) if path.exists() else {}
+        )
     return OfficialSupportData(
         fish_ponds=loaded["fish_ponds"],
         locations=loaded["locations"],
         machines=loaded["machines"],
         shops=loaded["shops"],
+        monster_slayer_quests=loaded["monster_slayer_quests"],
     )
 
 

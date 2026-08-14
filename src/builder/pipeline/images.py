@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from builder.models import NormalizedEntity
+from builder.models import NormalizedEntity, production_attributes, structured_attributes
 from builder.utils.images import (
     create_thumbnail,
     crop_transparent_bounds,
@@ -32,7 +32,11 @@ def materialize_entity_images(
 
 
 def materialize_entity_images_with_report(
-    entities: list[NormalizedEntity], asset_root: Path, output_dir: Path
+    entities: list[NormalizedEntity],
+    asset_root: Path,
+    output_dir: Path,
+    *,
+    allow_legacy: bool = True,
 ) -> ImageMaterialization:
     images_dir = output_dir / "images"
     clear_previous_images(images_dir, output_dir)
@@ -42,6 +46,7 @@ def materialize_entity_images_with_report(
         asset_root=asset_root,
         asset_index=asset_index,
         output_dir=output_dir,
+        allow_legacy=allow_legacy,
     )
     result = ImageMaterialization()
     # Guarantee: executor.map keeps entity and diagnostic order stable despite parallel image work.
@@ -57,25 +62,32 @@ def materialize_entity(
     asset_root: Path,
     asset_index: dict[str, Path],
     output_dir: Path,
+    *,
+    allow_legacy: bool,
 ) -> ImageMaterialization:
     result = ImageMaterialization()
-    image_source = entity.extra_json.get("imageSource")
+    attributes = structured_attributes(entity) if allow_legacy else production_attributes(entity)
+    image_source = attributes.get("imageSource")
     if not isinstance(image_source, str) or not image_source:
-        if entity.extra_json.get("imageRequired") is True:
+        if attributes.get("imageRequired") is True:
             result.errors.append(
                 image_error(entity, "imageSource", "声明了必需图片但未提供 imageSource")
             )
         result.entities.append(entity)
         return result
-    source_path = resolve_image_source(entity.extra_json, asset_root, image_source, asset_index)
+    source_path = resolve_image_source(attributes, asset_root, image_source, asset_index)
     if source_path is None:
         result.errors.append(image_error(entity, image_source, "未找到官方图片资源"))
         result.entities.append(entity)
         return result
     relative_output = Path("images") / f"{sanitize_id(entity.id)}.webp"
     try:
-        image_rect = image_rect_for(entity.extra_json, source_path)
-        image_mode = entity.extra_json.get("imageMode")
+        image_rect = image_rect_for(attributes, source_path)
+        materialized_rect = image_rect
+        if materialized_rect is None and not allow_legacy:
+            with Image.open(source_path) as source_image:
+                materialized_rect = (0, 0, source_image.width, source_image.height)
+        image_mode = attributes.get("imageMode")
         preserve_canvas = image_mode == "sprite" or image_mode == "portrait"
         if not build_entity_image(
             source_path,
@@ -83,17 +95,35 @@ def materialize_entity(
             output_dir / relative_output,
             preserve_canvas=preserve_canvas,
         ):
-            if entity.extra_json.get("imageRequired") is True:
-                raise ValueError("必需图片内容完全透明")
-            attributes = dict(entity.extra_json)
-            attributes["imageAvailability"] = "not_applicable"
-            result.entities.append(entity.model_copy(update={"extra_json": attributes}))
-            return result
+            raise ValueError("图片裁切结果完全透明")
     except Exception as exc:
+        if (
+            not allow_legacy
+            and str(exc) == "图片裁切结果完全透明"
+            and attributes.get("imageRequired") is not True
+        ):
+            result.entities.append(
+                entity.model_copy(
+                    update={
+                        "source_attributes": {
+                            **entity.source_attributes,
+                            "imageAvailability": "not_applicable",
+                        }
+                    }
+                )
+            )
+            return result
         result.errors.append(image_error(entity, image_source, str(exc)))
         result.entities.append(entity)
         return result
-    result.entities.append(entity.model_copy(update={"image_path": relative_output.as_posix()}))
+    result.entities.append(
+        entity.model_copy(
+            update={
+                "image_path": relative_output.as_posix(),
+                "image_crop_rect": materialized_rect,
+            }
+        )
+    )
     return result
 
 

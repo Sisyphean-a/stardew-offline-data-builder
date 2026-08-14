@@ -9,8 +9,7 @@ FIXTURE_RELEASE_BLOCK_REASON = "fixture 构建仅供开发检查，不能打包"
 
 
 def block_release(output_dir: Path, reason: str) -> None:
-    if not output_dir.is_dir():
-        return
+    output_dir.mkdir(parents=True, exist_ok=True)
     dump_json_file(
         output_dir / RELEASE_BLOCK_FILENAME,
         {"status": "blocked", "reason": reason},

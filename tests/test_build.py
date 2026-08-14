@@ -77,7 +77,7 @@ def test_build_uses_official_data_and_writes_reports(
     result = runner.invoke(
         app,
         [
-            "build",
+            "build-v4-legacy",
             "--game-dir",
             str(game_dir),
             "--output",
@@ -131,7 +131,7 @@ def test_build_uses_automatic_game_directory_once(
         raising=False,
     )
 
-    result = runner.invoke(app, ["build", "--output", str(tmp_path / "output")])
+    result = runner.invoke(app, ["build-v4-legacy", "--output", str(tmp_path / "output")])
 
     assert result.exit_code == 0, result.output
     assert result.stdout.count("自动发现游戏目录") == 1
@@ -158,7 +158,10 @@ def test_build_treats_empty_game_dir_as_explicit(
         return ResolvedGameDirectory(path=game_dir, origin="explicit")
 
     monkeypatch.setattr(build_module, "resolve_game_directory", resolve)
-    result = runner.invoke(app, ["build", "--game-dir", "", "--output", str(tmp_path / "output")])
+    result = runner.invoke(
+        app,
+        ["build-v4-legacy", "--game-dir", "", "--output", str(tmp_path / "output")],
+    )
 
     assert result.exit_code == 0, result.output
     assert received == [Path("")]

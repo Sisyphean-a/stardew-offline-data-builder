@@ -5,10 +5,16 @@ from pathlib import Path
 import typer
 
 from builder import __version__
-from builder.commands.build import build_command, build_fixture_command
+from builder.commands.build import build_command, build_fixture_command, build_legacy_command
 from builder.commands.doctor import doctor_command
 from builder.commands.inspect import inspect_command
 from builder.commands.package import package_existing_output
+from builder.commands.schema5_candidate import build_schema5_candidate_command
+from builder.commands.schema5_fixture import (
+    build_schema5_b2_fixture_command,
+    build_schema5_fixture_command,
+)
+from builder.commands.schema5_staging import build_schema5_staging_command
 from builder.commands.unpack import unpack_command
 from builder.config import EXIT_PACKAGE
 from builder.utils.console import configure_stdio
@@ -43,13 +49,73 @@ def build_fixture(
     build_fixture_command(output)
 
 
+@app.command("build-schema5-fixture")
+def build_schema5_fixture(
+    output: str = typer.Option(
+        ".\\build\\schema5-fixture", help="schema 5 conformance fixture 输出目录。"
+    ),
+) -> None:
+    build_schema5_fixture_command(output)
+
+
+@app.command("build-schema5-b2-fixture")
+def build_schema5_b2_fixture(
+    output: str = typer.Option(
+        ".\\build\\schema5-b2-fixture", help="schema 5 B2 typed fixture 输出目录。"
+    ),
+) -> None:
+    build_schema5_b2_fixture_command(output)
+
+
+@app.command("build-schema5")
+def build_schema5(
+    game_dir: str | None = typer.Option(None, help="游戏目录；省略时自动发现。"),
+    output: str = typer.Option(".\\dist", help="schema 5 候选输出目录。"),
+    unpacked_dir: str | None = typer.Option(None, help="已解包目录。"),
+    xnb_hack: str | None = typer.Option(None, help="StardewXnbHack 路径。"),
+    force: bool = typer.Option(False, help="缺少解包数据时强制重新解包。"),
+) -> None:
+    build_schema5_candidate_command(game_dir, output, unpacked_dir, xnb_hack, force)
+
+
+@app.command("build-schema5-staging")
+def build_schema5_staging(
+    game_dir: str | None = typer.Option(None, help="游戏目录；省略时自动发现。"),
+    output: str = typer.Option(".\\build\\schema5-staging", help="schema 5 staging 输出目录。"),
+    unpacked_dir: str | None = typer.Option(None, help="已解包目录。"),
+    xnb_hack: str | None = typer.Option(None, help="StardewXnbHack 路径。"),
+    force: bool = typer.Option(False, help="缺少解包数据时强制重新解包。"),
+) -> None:
+    build_schema5_staging_command(game_dir, output, unpacked_dir, xnb_hack, force)
+
+
+@app.command("build-v4-legacy")
+def build_v4_legacy(
+    game_dir: str | None = typer.Option(
+        None,
+        help="游戏目录；省略时自动从本机 Steam 发现（仅迁移基线）。",
+    ),
+    output: str = typer.Option(".\\dist-v4-legacy", help="旧 schema 4 恢复输出目录。"),
+    unpacked_dir: str | None = typer.Option(None, help="已解包目录。"),
+    xnb_hack: str | None = typer.Option(None, help="StardewXnbHack 路径。"),
+    force: bool = typer.Option(False, help="缺少解包数据时强制重新解包。"),
+) -> None:
+    build_legacy_command(
+        game_dir=game_dir,
+        output=output,
+        unpacked_dir=unpacked_dir,
+        xnb_hack=xnb_hack,
+        force=force,
+    )
+
+
 @app.command("build")
 def build(
     game_dir: str | None = typer.Option(
         None,
         help="游戏目录；省略时自动从本机 Steam 发现（仅 Windows）。",
     ),
-    output: str = typer.Option(".\\dist", help="输出目录。"),
+    output: str = typer.Option(".\\dist", help="schema 5 正式候选输出目录。"),
     unpacked_dir: str | None = typer.Option(None, help="已解包目录。"),
     xnb_hack: str | None = typer.Option(None, help="StardewXnbHack 路径。"),
     force: bool = typer.Option(False, help="缺少解包数据时强制重新解包。"),

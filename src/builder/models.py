@@ -29,10 +29,24 @@ class NormalizedEntity(BaseModel):
     category: str | None
     translation_status: str = "complete"
     image_path: str | None = None
+    image_crop_rect: tuple[int, int, int, int] | None = None
+    # Legacy-shaped serialization retained only for the v4 writer and old tests.
     extra_json: dict[str, Any] = Field(default_factory=dict)
+    # Structured official input retained separately for the schema-5 projection.
+    source_attributes: dict[str, Any] = Field(default_factory=dict)
     source_file: str
     aliases: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
+
+
+def structured_attributes(entity: NormalizedEntity) -> dict[str, Any]:
+    """Return structured input, retaining the v4 fallback for legacy-only callers."""
+    return entity.source_attributes or entity.extra_json
+
+
+def production_attributes(entity: NormalizedEntity) -> dict[str, Any]:
+    """Return only the structured channel; never fall back to v4 serialization."""
+    return entity.source_attributes
 
 
 class SearchDocument(BaseModel):

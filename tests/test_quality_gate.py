@@ -20,7 +20,7 @@ def test_failed_required_image_blocks_package_and_reports_failure(tmp_path: Path
 
     result = runner.invoke(
         app,
-        ["build", "--game-dir", str(game_dir), "--output", str(output_dir)],
+        ["build-v4-legacy", "--game-dir", str(game_dir), "--output", str(output_dir)],
     )
 
     assert result.exit_code == EXIT_QUALITY
@@ -41,7 +41,9 @@ def test_failed_rebuild_quarantines_previous_package(tmp_path: Path) -> None:
     translated = achievements.with_name("Achievements.zh-CN.json")
 
     restore_fixture_achievement(game_dir / "Content (unpacked)")
-    first = runner.invoke(app, ["build", "--game-dir", str(game_dir), "--output", str(output_dir)])
+    first = runner.invoke(
+        app, ["build-v4-legacy", "--game-dir", str(game_dir), "--output", str(output_dir)]
+    )
     achievements.write_text(
         json.dumps({"0": "Greenhorn^Earn 15,000g.^true^-1^18"}), encoding="utf-8"
     )
@@ -49,7 +51,9 @@ def test_failed_rebuild_quarantines_previous_package(tmp_path: Path) -> None:
         json.dumps({"0": "新手^赚取 15,000 金。^true^-1^18"}, ensure_ascii=False),
         encoding="utf-8",
     )
-    second = runner.invoke(app, ["build", "--game-dir", str(game_dir), "--output", str(output_dir)])
+    second = runner.invoke(
+        app, ["build-v4-legacy", "--game-dir", str(game_dir), "--output", str(output_dir)]
+    )
 
     assert first.exit_code == 0, first.output
     assert second.exit_code == EXIT_QUALITY
@@ -64,7 +68,9 @@ def test_missing_required_entity_type_blocks_build(tmp_path: Path) -> None:
     (data_dir / "Achievements.json").unlink()
     (data_dir / "Achievements.zh-CN.json").unlink()
 
-    result = runner.invoke(app, ["build", "--game-dir", str(game_dir), "--output", str(output_dir)])
+    result = runner.invoke(
+        app, ["build-v4-legacy", "--game-dir", str(game_dir), "--output", str(output_dir)]
+    )
 
     assert result.exit_code == EXIT_SOURCE_DATA
     assert "achievement" in result.stdout
@@ -80,7 +86,7 @@ def test_missing_nonvisual_extended_type_blocks_build(tmp_path: Path) -> None:
 
     result = runner.invoke(
         app,
-        ["build", "--game-dir", str(game_dir), "--output", str(tmp_path / "output")],
+        ["build-v4-legacy", "--game-dir", str(game_dir), "--output", str(tmp_path / "output")],
     )
 
     assert result.exit_code == EXIT_SOURCE_DATA
@@ -98,7 +104,9 @@ def test_invalid_manual_name_override_blocks_package(
     monkeypatch.setattr("builder.commands.build.OVERRIDES_PATH", overrides_path)
 
     output_dir = tmp_path / "output"
-    result = runner.invoke(app, ["build", "--game-dir", str(game_dir), "--output", str(output_dir)])
+    result = runner.invoke(
+        app, ["build-v4-legacy", "--game-dir", str(game_dir), "--output", str(output_dir)]
+    )
 
     assert result.exit_code == EXIT_QUALITY
     assert not (output_dir / "stardew-zh-cn.svdata").exists()
@@ -123,7 +131,7 @@ def test_manual_override_cannot_disable_required_image_contract(
 
     result = runner.invoke(
         app,
-        ["build", "--game-dir", str(game_dir), "--output", str(tmp_path / "output")],
+        ["build-v4-legacy", "--game-dir", str(game_dir), "--output", str(tmp_path / "output")],
     )
 
     assert isinstance(result.exception, ValueError)
@@ -135,11 +143,15 @@ def test_early_source_failure_quarantines_previous_package(tmp_path: Path) -> No
     output_dir = tmp_path / "output"
 
     restore_fixture_achievement(game_dir / "Content (unpacked)")
-    first = runner.invoke(app, ["build", "--game-dir", str(game_dir), "--output", str(output_dir)])
+    first = runner.invoke(
+        app, ["build-v4-legacy", "--game-dir", str(game_dir), "--output", str(output_dir)]
+    )
     data_dir = game_dir / "Content (unpacked)" / "Data"
     for fish_path in (data_dir / "Fish.en.json", data_dir / "Fish.zh-CN.json"):
         fish_path.unlink()
-    second = runner.invoke(app, ["build", "--game-dir", str(game_dir), "--output", str(output_dir)])
+    second = runner.invoke(
+        app, ["build-v4-legacy", "--game-dir", str(game_dir), "--output", str(output_dir)]
+    )
     package = runner.invoke(app, ["package", "--output", str(output_dir)])
 
     assert first.exit_code == 0, first.output
@@ -156,7 +168,7 @@ def test_failed_fixture_build_writes_unpackageable_metadata(tmp_path: Path, monk
     output_dir = tmp_path / "output"
     initial = runner.invoke(
         app,
-        ["build", "--game-dir", str(game_dir), "--output", str(output_dir)],
+        ["build-v4-legacy", "--game-dir", str(game_dir), "--output", str(output_dir)],
     )
 
     fixture_root = tmp_path / "fixture"
@@ -193,7 +205,7 @@ def test_successful_fixture_quarantines_existing_package(tmp_path: Path) -> None
 
     initial = runner.invoke(
         app,
-        ["build", "--game-dir", str(game_dir), "--output", str(output_dir)],
+        ["build-v4-legacy", "--game-dir", str(game_dir), "--output", str(output_dir)],
     )
     fixture = runner.invoke(app, ["build-fixture", "--output", str(output_dir)])
     package = runner.invoke(app, ["package", "--output", str(output_dir)])

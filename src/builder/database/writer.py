@@ -6,13 +6,15 @@ from pathlib import Path
 import orjson
 
 from builder import __version__
-from builder.config import SCHEMA_VERSION, TEMP_DB_SUFFIX
+from builder.config import LEGACY_SCHEMA_VERSION, TEMP_DB_SUFFIX
 from builder.models import BuildSummary, NormalizedEntity, SearchDocument
 from builder.pipeline.artifact_metadata import (
     ARTIFACT_METADATA_KEY,
     build_artifact_metadata,
 )
 from builder.utils.time import current_utc_iso
+
+SCHEMA_VERSION = LEGACY_SCHEMA_VERSION
 
 
 def write_database(

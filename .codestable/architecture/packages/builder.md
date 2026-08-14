@@ -11,25 +11,25 @@ code-paths:
 
 ## 公开边界
 
-- `src/builder/cli.py` 暴露 `build`、`build-fixture`、`doctor`、`unpack`、`inspect`、`package`。
+- `src/builder/cli.py` 暴露正式 schema 5 `build`、显式迁移基线 `build-v4-legacy`、`build-schema5-staging`、`build-fixture`、`doctor`、`unpack`、`inspect`、`package`。
 - `src/builder/__main__.py` 让 `python -m builder` 调用 Typer CLI。
 - `build`、`unpack`、`doctor` 通过 `builder.sources.steam_discovery.resolve_game_directory` 解析显式或自动发现的游戏目录；显式路径优先，自动发现必须只有一个完整候选。
 
 ## 主流程
 
-1. `commands/build.py:build_command` 解析游戏目录和解包目录，加载官方实体与支持数据。
+1. `commands/build.py:build_command` 解析游戏目录和解包目录，加载官方实体与支持数据，并委托 `commands/schema5_candidate.py`；schema 4 `build-v4-legacy` 保留为显式迁移基线。
 2. `sources/game_source.py:load_game_data_from_unpacked_dir` 发现 `Data/`、角色日程等官方 JSON，调用 `parsers/official.py` 解析，再合并 `Strings/*.json` 的英文和官方中文；读取失败和解析失败保留在 `GameSourceLoad.errors`。
 3. `pipeline/normalize.py:normalize_entities` 以 `<entity_type>:<official source id>` 形成稳定 ID，合并语言、别名、分类、来源和翻译状态。
-4. pipeline 把官方字段、跨表关系、可验证计算和受控补充事实规范化为 `player-facts-v1` 的事实、关系、条件和逐 claim 证据；展示覆盖之后应用且不能改写事实/证据。schema 4 的 `officialDerived` 不再是发布 API。
+4. pipeline 从 `NormalizedEntity.source_attributes` 和官方支持文件映射官方字段、跨表关系、可验证计算和受控补充事实，规范化为 `player-facts-v1` 的事实、关系、条件和逐 claim 证据；展示覆盖之后应用且不能改写事实/证据。schema 4 的 `officialDerived` 不再是发布 API。
 5. `pipeline/images.py:materialize_entity_images_with_report` 按解析器写入的官方图片元数据裁切、缩略和 WebP 化，并返回结构化资源错误。
-6. `commands/build_output.py:write_build_output` 生成 schema 5 SQLite、图片清单、报告和 manifest 2；质量不通过时保留诊断产物、写发布阻断标记并以质量退出码结束，通过后才创建 `.svdata`。
-7. `commands/package.py:package_existing_output` 重新校验发布状态、artifact metadata 和数据库图片引用，用临时 ZIP 校验后原子替换正式包。
+6. `commands/schema5_candidate.py` 在临时目录完成 typed projection、核心槽覆盖门槛、schema 5 SQLite/manifest 2/conformance、报告和视觉绑定；质量不通过时保留失败目录和发布阻断标记，成功后整体替换输出并创建 `.svdata`。manifest 还绑定 conformance 与 reports 的内容哈希。
+7. `commands/package.py:package_existing_output` 按 manifest 版本分派；schema 5 重新校验契约、数据库哈希、schema fingerprint、typed value/evidence/claim 图、user_version、quick_check、foreign_key_check、conformance、报告与视觉哈希，用临时 ZIP 校验后原子替换正式包。
 
 ## 模块职责
 
 - `sources/`：游戏目录/Steam 发现、官方 JSON 与支持文件、项目本地配置输入。
 - `parsers/`：官方现代结构、旧字符串结构、本地化和旧格式视觉规则。
-- `pipeline/`：稳定化、官方派生关联、图片、搜索、质量、报告、发布状态和包完整性。
+- `pipeline/`：稳定化、结构化官方属性映射、跨表事实、图片、搜索、质量、覆盖报告、发布状态、artifact 内容绑定和包完整性。
 - `database/`：SQLite schema、事务性临时文件写入、查询和 artifact metadata 读取。
 - `commands/`：CLI 用例编排，不承担解析细节。
 - `utils/`：路径、JSON、哈希、时间、图片和外部进程等无领域所有权的基础机制。

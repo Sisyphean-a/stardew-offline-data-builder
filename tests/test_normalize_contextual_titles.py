@@ -208,7 +208,7 @@ def test_gift_titles_cover_universal_preferences_and_avatar_metadata() -> None:
                 locale="zh-CN",
                 attributes={
                     "imageSource": "Portraits/Abigail.png",
-                    "imageRect": [0, 0, 64, 64],
+                    "imageRect": [0, 0, 32, 64],
                     "imageFallbackRect": [0, 0, 16, 32],
                     "imageMode": "portrait",
                 },
@@ -227,7 +227,7 @@ def test_gift_titles_cover_universal_preferences_and_avatar_metadata() -> None:
     assert by_id["villager_gift:Universal_Love"].name_en is None
     gift_extra = by_id["villager_gift:Abigail"].extra_json
     assert gift_extra["imageSource"] == "Portraits/Abigail.png"
-    assert gift_extra["imageRect"] == [0, 0, 64, 64]
+    assert gift_extra["imageRect"] == [0, 0, 32, 64]
     assert gift_extra["imageFallbackRect"] == [0, 0, 16, 32]
     assert gift_extra["imageMode"] == "portrait"
     assert gift_extra["imageRequired"] is False

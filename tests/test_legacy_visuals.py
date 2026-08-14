@@ -12,12 +12,63 @@ from builder.pipeline.images import materialize_entity_images_with_report
 from builder.pipeline.normalize import normalize_entities
 
 
+def test_compact_official_records_expose_typed_metadata_without_using_legacy_fields() -> None:
+    fish = parse_official_file(
+        DiscoveredJsonFile(
+            path="Data/Fish.json",
+            entity_type="fish",
+            locale="en",
+        ),
+        {
+            "158": (
+                "Stonefish/65/sinker/15/15/600 2600/"
+                "spring summer fall winter/both/689 .2/2/.1/.1/3/false"
+            )
+        },
+    )[0]
+    assert fish.attributes["sourceFormat"] == "official_compact"
+    assert fish.attributes["typedRecordKind"] == "fish-v1"
+    assert fish.attributes["Difficulty"] == 65
+    assert fish.attributes["Seasons"] == ["spring", "summer", "fall", "winter"]
+
+    tool = parse_official_file(
+        DiscoveredJsonFile(
+            path="Data/Tools.json",
+            entity_type="tool",
+            locale="en",
+        ),
+        {
+            "CopperAxe": {
+                "Name": "Copper Axe",
+                "UpgradeLevel": 1,
+                "ConventionalUpgradeFrom": "(T)Axe",
+            }
+        },
+    )[0]
+    assert tool.attributes["UpgradeMaterial"] == "334"
+    assert tool.attributes["UpgradeCost"] == 2000
+    assert tool.attributes["UpgradeMaterialQuantity"] == 5
+
+    schedule = parse_official_file(
+        DiscoveredJsonFile(
+            path="Characters/schedules/Abigail.json",
+            entity_type="npc_schedule",
+            locale="en",
+        ),
+        {"Abigail": "GOTO spring/1000 Town 1 2"},
+    )[0]
+    assert schedule.attributes["ScheduleEntries"] == [
+        {"rule": "GOTO spring"},
+        {"time": 1000, "location": "Town", "route": ["1", "2"]},
+    ]
+
+
 def test_legacy_visual_records_use_their_real_sprite_metadata(tmp_path: Path) -> None:
     entities = normalized_visual_entities()
     by_id = {entity.id: entity for entity in entities}
 
     assert by_id["achievement:0"].extra_json["imageRect"] == [192, 128, 64, 64]
-    assert by_id["villager:Abigail"].extra_json["imageRect"] == [0, 0, 64, 64]
+    assert by_id["villager:Abigail"].extra_json["imageRect"] == [0, 0, 32, 64]
     assert by_id["object:1"].extra_json["imageGridCellSize"] == [16, 16]
     assert by_id["footwear:1"].extra_json["spriteIndex"] == 1
     assert by_id["big_craftable:1"].extra_json["imageGridCellSize"] == [16, 32]
@@ -36,7 +87,7 @@ def test_legacy_visual_records_use_their_real_sprite_metadata(tmp_path: Path) ->
         "footwear-1.webp": (16, 16),
         "furniture-0.webp": (16, 32),
         "furniture-1.webp": (32, 48),
-        "villager-Abigail.webp": (64, 64),
+        "villager-Abigail.webp": (32, 64),
     }
 
 
@@ -257,7 +308,7 @@ def test_monster_metadata_uses_real_animated_sprite_frame_size(
     assert entity.extra_json["imageMode"] == "sprite"
 
 
-def test_fully_transparent_optional_image_is_not_materialized(tmp_path: Path) -> None:
+def test_fully_transparent_optional_image_is_reported_as_error(tmp_path: Path) -> None:
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     Image.new("RGBA", (16, 16), (0, 0, 0, 0)).save(asset_root / "blank.png")
@@ -268,10 +319,34 @@ def test_fully_transparent_optional_image_is_not_materialized(tmp_path: Path) ->
 
     result = materialize_entity_images_with_report([entity], asset_root, tmp_path / "out")
 
-    assert result.errors == []
-    assert result.entities[0].image_path is None
-    assert result.entities[0].extra_json["imageAvailability"] == "not_applicable"
+    assert result.entities == [entity]
+    assert result.errors[0]["reason"] == "图片裁切结果完全透明"
     assert not (tmp_path / "out" / "images" / "object-blank.webp").exists()
+
+
+def test_formal_optional_transparent_sprite_is_marked_not_applicable(tmp_path: Path) -> None:
+    asset_root = tmp_path / "assets"
+    asset_root.mkdir()
+    Image.new("RGBA", (16, 16), (0, 0, 0, 0)).save(asset_root / "blank.png")
+    entity = normalized_entity(
+        "object:blank",
+        {"imageSource": "blank.png", "imageMode": "sprite", "spriteIndex": 0},
+    ).model_copy(
+        update={
+            "source_attributes": {
+                "imageSource": "blank.png",
+                "imageMode": "sprite",
+                "spriteIndex": 0,
+            }
+        }
+    )
+
+    result = materialize_entity_images_with_report(
+        [entity], asset_root, tmp_path / "out", allow_legacy=False
+    )
+
+    assert result.errors == []
+    assert result.entities[0].source_attributes["imageAvailability"] == "not_applicable"
 
 
 def test_fully_transparent_required_image_is_reported(tmp_path: Path) -> None:
@@ -291,7 +366,7 @@ def test_fully_transparent_required_image_is_reported(tmp_path: Path) -> None:
     result = materialize_entity_images_with_report([entity], asset_root, tmp_path / "out")
 
     assert result.entities == [entity]
-    assert result.errors[0]["reason"] == "必需图片内容完全透明"
+    assert result.errors[0]["reason"] == "图片裁切结果完全透明"
 
 
 def test_required_image_without_source_is_reported(tmp_path: Path) -> None:

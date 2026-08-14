@@ -75,7 +75,7 @@ def test_inspect_outputs_extra_type_counts(tmp_path: Path) -> None:
     build = runner.invoke(
         app,
         [
-            "build",
+            "build-v4-legacy",
             "--game-dir",
             str(game_dir),
             "--output",

@@ -11,9 +11,9 @@ applies-to:
 ## 规则
 
 - `pipeline/artifact_metadata.py:build_artifact_metadata` 生成 manifest/schema/content contract、必需/可选能力、构建器/语言/游戏/发布策略版本、源哈希、可发布状态、内容与质量摘要。
-- schema 5 将实体、核心事实槽/多值事实、关系组/有向关系、条件、来源/证据、视觉、列表卡片/筛选、别名/ID 重定向分离为可校验表或等价只读投影；`officialDerived` 不再是发布读取 API。
+- schema 5 将实体、核心事实槽/多值事实、关系组/有向关系、条件、来源/证据、视觉、列表卡片/筛选、别名/ID 重定向分离为可校验表或等价只读投影；`fact_items` 以稳定 `scope_id` 绑定同一报价/捕获规则，并可直接引用 `condition_set_id`，使多值事实的条件不会丢失；`officialDerived` 不再是发布读取 API。
 - `entity_cards`、搜索投影和 `browse_facets` 由规范事实确定性生成；facet 绑定稳定规则 scope、类型化值/区间、状态和条件完整性，关系提供有向正反查询索引。质量门禁校验投影与规范事实一致，不允许投影成为第二事实源。
-- `database/writer.py` 将该元数据写入 `build_meta.artifact_metadata`；`commands/package.py` 读取并校验它，再生成 manifest 和 ZIP。
+- 正式 `commands/build.py:build_command` 只调用 schema 5 candidate projection/writer；schema 4 `database/writer.py` 仅供显式 `build-v4-legacy`/fixture 与迁移基线使用。schema 5 writer 将 manifest/conformance 与 SQLite 一起提交，`commands/package.py` 按 manifest 版本分派并重新校验 v5 后生成 ZIP。
 - 质量状态不是提示信息：翻译缺失/无效、数据或图片错误、缺少实体类型中文标签都会使构建不可发布。
 - fixture 的 metadata 明确 `publishable: false`；失败构建和 fixture 输出使用 `.release-blocked.json`，独立 `package` 必须拒绝。
 - 图片清单把实体、视觉状态、路径、实际来源、裁切、规则版本与文件哈希绑定；独立 package 重新校验内容而非只看路径存在。
@@ -24,7 +24,11 @@ applies-to:
 
 ## 代码锚点
 
-- `src/builder/pipeline/artifact_metadata.py`
+- `src/builder/commands/schema5_candidate.py`
+- `src/builder/pipeline/schema5_projection.py`
+- `src/builder/pipeline/schema5_release.py`
+- `src/builder/pipeline/schema5_writer.py`
+- `src/builder/pipeline/artifact_metadata.py`（仅 legacy v4 迁移输出）
 - `src/builder/pipeline/quality.py`
 - `src/builder/pipeline/package_integrity.py`
 - `src/builder/pipeline/release_state.py`

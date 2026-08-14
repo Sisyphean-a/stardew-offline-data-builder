@@ -63,7 +63,7 @@ def build_fixture_command(output: str) -> None:
             categories=load_categories(CATEGORIES_PATH),
         )
         entities = enrich_official_entities(entities, official.support)
-        entities = filter_publishable_entities(entities)
+        entities = filter_publishable_entities(entities, allow_legacy=True)
         images = materialize_entity_images_with_report(entities, unpacked_dir, output_dir)
         errors = [*official.errors, *images.errors, *quality_errors(images.entities)]
         summary = summarize_entities(images.entities, data_errors=len(errors))
@@ -96,7 +96,7 @@ def build_fixture_command(output: str) -> None:
         raise
 
 
-def build_command(
+def build_legacy_command(
     game_dir: str | None,
     output: str,
     unpacked_dir: str | None,
@@ -121,7 +121,7 @@ def build_command(
         enriched = enrich_official_entities(normalized, official.support)
         overrides = load_entity_overrides(OVERRIDES_PATH)
         entities, unknown_overrides = apply_entity_overrides(enriched, overrides)
-        entities = filter_publishable_entities(entities)
+        entities = filter_publishable_entities(entities, allow_legacy=True)
         images = materialize_entity_images_with_report(
             entities,
             asset_root=resolved_unpacked_dir,
@@ -139,6 +139,19 @@ def build_command(
     except Exception as exc:
         handle_build_failure(output_dir, exc)
         raise
+
+
+def build_command(
+    game_dir: str | None,
+    output: str,
+    unpacked_dir: str | None,
+    xnb_hack: str | None = None,
+    force: bool = False,
+) -> None:
+    """Build the formal schema-5 candidate; v4 is recovery-only."""
+    from builder.commands.schema5_candidate import build_schema5_candidate_command
+
+    build_schema5_candidate_command(game_dir, output, unpacked_dir, xnb_hack, force)
 
 
 def resolve_build_inputs(
@@ -192,6 +205,10 @@ def assert_required_official_entities(
 
 def source_hash(unpacked_dir: Path) -> str:
     paths = [*sorted(unpacked_dir.rglob("*.json")), *CONFIG_PATHS]
+    game_dir = unpacked_dir.parent
+    dll_path = game_dir / "Stardew Valley.dll"
+    if dll_path.is_file():
+        paths.append(dll_path)
     return sha256_paths(paths)
 
 

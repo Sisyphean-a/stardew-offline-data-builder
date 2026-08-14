@@ -8,6 +8,7 @@ from builder.models import DiscoveredJsonFile, RawEntity
 from builder.parsers.localization import build_raw_entities_from_entries, optional_text
 from builder.parsers.official_assets import LOCALE_SUFFIX, unwrap_content
 from builder.parsers.official_visuals import apply_image_metadata
+from builder.pipeline.official_values import parse_bundle_ingredients, parse_ingredients
 
 
 def parse_official_file(
@@ -81,6 +82,8 @@ def build_mapping_entity(
         name = name or optional_text(attributes.get("AreaName"))
     description = first_text(attributes, ("Description", "description", "Text", "text"))
     apply_image_metadata(attributes, discovered.entity_type, internal_name, source_id)
+    if discovered.entity_type == "tool":
+        add_tool_upgrade_metadata(attributes)
     return RawEntity(
         source="official",
         entity_type=discovered.entity_type,
@@ -106,10 +109,19 @@ def build_legacy_entity(
     name = explicit_display_name or legacy_display_name(
         discovered.entity_type, fields, internal_name
     )
-    attributes: dict[str, Any] = {"legacyFields": fields, "legacyValue": value}
+    # Keep the compact official record only in the explicit v4 payload while
+    # exposing its typed build-time mapping separately.  The schema-5
+    # candidate consumes ``source_attributes`` and never parses these fields.
+    attributes: dict[str, Any] = {
+        "legacyFields": fields,
+        "legacyValue": value,
+        "sourceFormat": "official_compact",
+        "typedRecordKind": f"{discovered.entity_type}-v1",
+    }
     if explicit_display_name:
         attributes["hasExplicitDisplayName"] = True
     add_recipe_output_metadata(attributes, discovered.entity_type, fields)
+    add_legacy_structured_metadata(attributes, discovered.entity_type, fields)
     if discovered.entity_type == "crop" and len(fields) > 3:
         attributes["HarvestItemId"] = fields[3]
         source_id = fields[3] or source_id
@@ -129,6 +141,161 @@ def build_legacy_entity(
     )
 
 
+def add_legacy_structured_metadata(
+    attributes: dict[str, Any], entity_type: str, fields: list[str]
+) -> None:
+    if entity_type == "achievement":
+        attributes.update(
+            compact_typed_values(
+                {
+                    "achievementTitle": legacy_text(fields, 0),
+                    "achievementDescription": legacy_text(fields, 1),
+                    "achievementSecret": legacy_bool(fields, 2),
+                    "achievementIconIndex": legacy_int(fields, 3),
+                    "achievementSortOrder": legacy_int(fields, 4),
+                }
+            )
+        )
+    elif entity_type == "quest":
+        attributes.update(
+            compact_typed_values(
+                {
+                    "questType": legacy_text(fields, 0),
+                    "questTitle": legacy_text(fields, 1),
+                    "questDescription": legacy_text(fields, 2),
+                    "questObjective": legacy_text(fields, 3),
+                    "questLocation": legacy_text(fields, 4),
+                    "questReward": legacy_int(fields, 5),
+                    "questRepeatable": legacy_bool(fields, 7),
+                }
+            )
+        )
+    elif entity_type == "furniture":
+        attributes.update(
+            compact_typed_values(
+                {
+                    "furnitureDisplayName": legacy_text(fields, 7),
+                    "furnitureType": legacy_text(fields, 1),
+                    "furniturePrice": legacy_int(fields, 5),
+                }
+            )
+        )
+    elif entity_type == "footwear":
+        attributes.update(
+            compact_typed_values(
+                {
+                    "footwearDescription": legacy_text(fields, 1),
+                    "footwearDefense": legacy_int(fields, 2),
+                    "footwearImmunity": legacy_int(fields, 3),
+                    "footwearPrice": legacy_int(fields, 5),
+                    "footwearDisplayName": legacy_text(fields, 6),
+                }
+            )
+        )
+    elif entity_type == "monster":
+        attributes.update(
+            compact_typed_values(
+                {
+                    "monsterHealth": legacy_int(fields, 0),
+                    "monsterDamage": legacy_int(fields, 1),
+                    "monsterCanFly": legacy_bool(fields, 4),
+                    "monsterDropText": legacy_text(fields, 6),
+                }
+            )
+        )
+    elif entity_type == "ginger_island":
+        attributes["eventKey"] = "/".join(fields)
+    elif entity_type == "fish":
+        if len(fields) < 14 or legacy_int(fields, 1) is None:
+            attributes["CaptureMethod"] = "trap"
+            return
+        values: dict[str, Any] = {
+            "Difficulty": legacy_int(fields, 1),
+            "Behavior": legacy_text(fields, 2),
+            "MinSize": legacy_int(fields, 3),
+            "MaxSize": legacy_int(fields, 4),
+            "FishingTime": legacy_text(fields, 5),
+            "Seasons": split_words(fields, 6),
+            "Weather": legacy_text(fields, 7),
+        }
+        attributes.update({key: value for key, value in values.items() if value is not None})
+    elif entity_type in {"cooking_recipe", "crafting_recipe"}:
+        ingredients = parse_ingredients(fields[0] if fields else None)
+        if ingredients:
+            attributes["Ingredients"] = ingredients
+    elif entity_type == "bundle":
+        ingredients = parse_bundle_ingredients(fields[2] if len(fields) > 2 else None)
+        if ingredients:
+            attributes["BundleIngredients"] = ingredients
+    elif entity_type == "villager_gift":
+        preferences = ("loved", "liked", "neutral", "disliked", "hated")
+        attributes["GiftTastes"] = [
+            {"preference": preference, "items": split_words(fields, index) or []}
+            for index, preference in enumerate(preferences)
+            if index < len(fields)
+        ]
+    elif entity_type == "npc_schedule":
+        schedule = parse_legacy_schedule(fields)
+        if schedule:
+            attributes["ScheduleEntries"] = schedule
+
+
+def parse_legacy_schedule(fields: list[str]) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    for field in fields:
+        text = field.strip()
+        if not text:
+            continue
+        parts = text.split()
+        if len(parts) >= 2 and parts[0].isdigit():
+            entries.append(
+                {
+                    "time": int(parts[0]),
+                    "location": parts[1],
+                    "route": parts[2:],
+                }
+            )
+        else:
+            # Commands such as GOTO, warp and friendship gates are still
+            # official schedule rules. Preserve them as an explicit typed rule
+            # instead of dropping them or forwarding legacyFields downstream.
+            entries.append({"rule": text})
+    return entries
+
+
+def compact_typed_values(values: dict[str, object]) -> dict[str, object]:
+    return {key: value for key, value in values.items() if value is not None}
+
+
+def legacy_text(fields: list[str], index: int) -> str | None:
+    value = fields[index] if len(fields) > index else None
+    return value.strip() or None if isinstance(value, str) else None
+
+
+def legacy_bool(fields: list[str], index: int) -> bool | None:
+    value = legacy_text(fields, index)
+    if value is None:
+        return None
+    if value.casefold() == "true":
+        return True
+    if value.casefold() == "false":
+        return False
+    return None
+
+
+def legacy_int(fields: list[str], index: int) -> int | None:
+    value = fields[index] if len(fields) > index else None
+    try:
+        return int(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def split_words(fields: list[str], index: int) -> list[str] | None:
+    value = legacy_text(fields, index)
+    return value.split() if value else None
+
+
 def add_recipe_output_metadata(
     attributes: dict[str, Any], entity_type: str, fields: list[str]
 ) -> None:
@@ -142,6 +309,52 @@ def add_recipe_output_metadata(
         attributes["outputEntityType"] = "big_craftable"
     else:
         attributes["outputEntityType"] = "object"
+
+
+def add_tool_upgrade_metadata(attributes: dict[str, Any]) -> None:
+    upgrade_level = legacy_int_value(attributes.get("UpgradeLevel"))
+    conventional = attributes.get("ConventionalUpgradeFrom")
+    custom = attributes.get("UpgradeFrom")
+    upgrades = custom if isinstance(custom, list) else []
+    if isinstance(conventional, str) and conventional.strip():
+        material_by_level = {1: "334", 2: "335", 3: "336", 4: "337"}
+        price_by_level = {1: 2000, 2: 5000, 3: 10000, 4: 25000}
+        attributes.update(
+            compact_typed_values(
+                {
+                    "UpgradeRequireToolId": conventional,
+                    "UpgradeMaterial": material_by_level.get(upgrade_level),
+                    "UpgradeMaterialQuantity": 5,
+                    "UpgradeCost": price_by_level.get(upgrade_level),
+                }
+            )
+        )
+        return
+    if not upgrades:
+        return
+    first = upgrades[0] if isinstance(upgrades[0], dict) else {}
+    if not isinstance(first, dict):
+        return
+    attributes.update(
+        compact_typed_values(
+            {
+                "UpgradeCondition": first.get("Condition"),
+                "UpgradeRequireToolId": first.get("RequireToolId"),
+                "UpgradeMaterial": first.get("TradeItemId"),
+                "UpgradeMaterialQuantity": legacy_int_value(first.get("TradeItemAmount")),
+                "UpgradeCost": legacy_int_value(first.get("Price")),
+            }
+        )
+    )
+
+
+def legacy_int_value(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def build_object_specializations(entity: RawEntity) -> Iterable[RawEntity]:

@@ -33,7 +33,7 @@ def test_real_official_layout_builds_primary_entities(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "build",
+            "build-v4-legacy",
             "--game-dir",
             str(game_dir),
             "--unpacked-dir",
@@ -101,7 +101,7 @@ def test_real_legacy_visual_records_build_with_required_images(tmp_path: Path) -
     result = runner.invoke(
         app,
         [
-            "build",
+            "build-v4-legacy",
             "--game-dir",
             str(game_dir),
             "--unpacked-dir",
@@ -154,7 +154,7 @@ def test_standalone_package_rejects_missing_required_image(tmp_path: Path) -> No
     initial = runner.invoke(
         app,
         [
-            "build",
+            "build-v4-legacy",
             "--game-dir",
             str(game_dir),
             "--unpacked-dir",

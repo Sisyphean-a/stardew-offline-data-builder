@@ -48,6 +48,7 @@ def shop_offer(
             "itemId": item.get("ItemId"),
             "randomItemIds": item.get("RandomItemId"),
             "price": item.get("Price"),
+            "useObjectDataPrice": item.get("UseObjectDataPrice"),
             "priceModifiers": item.get("PriceModifiers"),
             "tradeItemId": item.get("TradeItemId"),
             "tradeItemAmount": item.get("TradeItemAmount"),
