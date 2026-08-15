@@ -106,6 +106,48 @@ def test_recipe_projection_emits_typed_materials_and_output_references(
     assert [item.scope_id for item in materials] == [item.scope_id for item in quantities]
 
 
+def test_runtime_monster_location_uses_auditable_conditional_rule(tmp_path: Path) -> None:
+    package = build_schema5_staging_package(
+        [entity("monster:Lava-Lurk", "monster")],
+        tmp_path,
+        game_version="1.6.15",
+        support=OfficialSupportData(),
+    )
+
+    slot = next(
+        slot for slot in package.fact_slots if slot.id == "fact:monster:Lava-Lurk:locations"
+    )
+    assert slot.status == "conditional"
+    item = next(item for item in package.fact_items if item.slot_id == slot.id)
+    assert item.text_value == "火山地牢"
+    condition = next(
+        condition for condition in package.condition_sets if condition.id == item.condition_set_id
+    )
+    assert condition.completeness == "complete"
+    assert "熔岩区" in str(condition.player_summary)
+    locator = next(
+        locator
+        for locator in package.source_locators
+        if locator.id.endswith("VolcanoDungeon.GenerateEntities")
+    )
+    assert locator.source_file == "Stardew Valley.dll"
+
+
+def test_nonspawnable_legacy_monster_location_is_not_applicable(tmp_path: Path) -> None:
+    package = build_schema5_staging_package(
+        [entity("monster:Crow", "monster")],
+        tmp_path,
+        game_version="1.6.15",
+        support=OfficialSupportData(),
+    )
+
+    slot = next(slot for slot in package.fact_slots if slot.id == "fact:monster:Crow:locations")
+    assert slot.status == "not_applicable"
+    item = next(item for item in package.fact_items if item.slot_id == slot.id)
+    assert item.text_value == "当前版本不作为独立可生成战斗怪物"
+
+
+
 def test_monster_drop_projection_keeps_item_reference_and_chance_condition(
     tmp_path: Path,
 ) -> None:

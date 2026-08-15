@@ -100,6 +100,189 @@ VOLCANO_CHEST_WEAPONS: dict[str, int] = {
 # Single-item rules whose acquisition is implemented outside the ordinary
 # shop/chest tables.  The source method is kept explicit so an App consumer
 # can distinguish a game rule from a direct JSON row.
+# ``Monsters.json`` is a combat-stat catalogue, not a spawn table.  These
+# rules mirror the runtime selectors that create the named catalogue monster.
+# A rule records a possible player encounter, never a guaranteed spawn rate.
+RUNTIME_MONSTER_LOCATION_RULES: dict[str, tuple[str, str, str]] = {
+    "monster:Bat": (
+        "矿井",
+        "普通矿井、头骨山洞或采石场矿井的蝙蝠生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Big-Slime": (
+        "矿井",
+        "史莱姆区域或头骨山洞的巨型史莱姆生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Blue-Squid": (
+        "矿井",
+        "危险矿井的史莱姆区域或普通矿井层段生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Bug": ("矿井", "普通矿井或头骨山洞的虫类生成规则", "MineShaft.getMonsterForThisLevel"),
+    "monster:Carbon-Ghost": (
+        "矿井",
+        "危险冰雪矿井或头骨山洞黑暗层生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Duggy": ("矿井", "普通矿井可挖掘地块的生成规则", "MineShaft.getMonsterForThisLevel"),
+    "monster:Dust-Spirit": ("矿井", "冰雪矿井的尘灵生成规则", "MineShaft.getMonsterForThisLevel"),
+    "monster:Dwarvish-Sentry": (
+        "火山地牢",
+        "火山地牢木桶释放的矮人哨兵",
+        "BreakableContainer.releaseContents",
+    ),
+    "monster:False-Magma-Cap": (
+        "火山地牢",
+        "火山地牢蘑菇层的假熔岩帽生成规则",
+        "VolcanoDungeon.GenerateEntities",
+    ),
+    "monster:Fly": (
+        "矿井",
+        "普通矿井、恐龙区域或危险史莱姆区域的苍蝇生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Frost-Bat": ("矿井", "冰雪矿井的蝙蝠变体生成规则", "MineShaft.getMonsterForThisLevel"),
+    "monster:Frost-Jelly": (
+        "矿井",
+        "冰雪矿井的史莱姆变体生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Ghost": ("矿井", "冰雪矿井 50 层后生成的幽灵", "MineShaft.getMonsterForThisLevel"),
+    "monster:Green-Slime": (
+        "矿井",
+        "矿井、头骨山洞或农场荒野怪物生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Grub": (
+        "矿井",
+        "普通矿井或危险冰雪矿井的蛆虫生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Hot-Head": ("火山地牢", "火山地牢生成规则", "VolcanoDungeon.GenerateEntities"),
+    "monster:Iridium-Bat": (
+        "头骨山洞",
+        "头骨山洞深层的蝙蝠变体生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Iridium-Crab": (
+        "头骨山洞",
+        "头骨山洞 146 层后的铱蟹生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Iridium-Golem": (
+        "农场",
+        "荒野农场怪物的战斗等级变体",
+        "Farm.spawnGroundMonsterOffScreen",
+    ),
+    "monster:Lava-Bat": ("矿井", "岩浆矿井的蝙蝠变体生成规则", "MineShaft.getMonsterForThisLevel"),
+    "monster:Lava-Crab": ("矿井", "岩浆矿井的熔岩蟹生成规则", "MineShaft.getMonsterForThisLevel"),
+    "monster:Lava-Lurk": ("火山地牢", "火山地牢熔岩区生成规则", "VolcanoDungeon.GenerateEntities"),
+    "monster:Magma-Duggy": (
+        "火山地牢",
+        "火山地牢可挖掘地块的生成规则",
+        "VolcanoDungeon.GenerateEntities",
+    ),
+    "monster:Magma-Sparker": (
+        "火山地牢",
+        "火山地牢蝙蝠的熔岩变体生成规则",
+        "VolcanoDungeon.GenerateEntities",
+    ),
+    "monster:Magma-Sprite": (
+        "火山地牢",
+        "火山地牢蝙蝠的熔岩变体生成规则",
+        "VolcanoDungeon.GenerateEntities",
+    ),
+    "monster:Metal-Head": ("矿井", "岩浆矿井的铁头生成规则", "MineShaft.getMonsterForThisLevel"),
+    "monster:Mummy": ("头骨山洞", "头骨山洞生成规则", "MineShaft.getMonsterForThisLevel"),
+    "monster:Pepper-Rex": (
+        "头骨山洞",
+        "头骨山洞 126 层后的恐龙生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Putrid-Ghost": (
+        "矿井",
+        "危险冰雪矿井 50 层后的幽灵变体",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Rock-Crab": (
+        "矿井",
+        "普通矿井、危险冰雪矿井或火山地牢的螃蟹生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Royal-Serpent": (
+        "头骨山洞",
+        "危险头骨山洞的飞蛇变体生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Serpent": ("头骨山洞", "头骨山洞的飞蛇生成规则", "MineShaft.getMonsterForThisLevel"),
+    "monster:Shadow-Brute": (
+        "矿井",
+        "岩浆矿井或农场荒野怪物生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Shadow-Shaman": (
+        "矿井",
+        "岩浆矿井的暗影萨满生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Shadow-Sniper": (
+        "矿井",
+        "危险岩浆矿井的暗影狙击手生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Skeleton": (
+        "矿井",
+        "冰雪矿井或采石场矿井的骷髅生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Skeleton-Mage": (
+        "矿井",
+        "危险冰雪矿井的骷髅法师变体",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Sludge": (
+        "头骨山洞",
+        "头骨山洞或采石场矿井的史莱姆变体",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Spider": ("矿井", "危险史莱姆区域的蜘蛛生成规则", "MineShaft.getMonsterForThisLevel"),
+    "monster:Spiker": ("火山地牢", "火山地牢固定尖刺怪生成规则", "VolcanoDungeon.GenerateEntities"),
+    "monster:Squid-Kid": (
+        "矿井",
+        "岩浆矿井或危险头骨山洞的火球小子生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Stone-Golem": (
+        "矿井",
+        "普通矿井 30 层后的石魔像生成规则",
+        "MineShaft.getMonsterForThisLevel",
+    ),
+    "monster:Tiger-Slime": (
+        "火山地牢",
+        "火山地牢生成的虎纹史莱姆",
+        "VolcanoDungeon.GenerateEntities",
+    ),
+    "monster:Truffle-Crab": ("农场", "猪挖出松露时的极低概率螃蟹变体", "FarmAnimal.DigUpProduce"),
+    "monster:Wilderness-Golem": (
+        "农场",
+        "荒野农场怪物的石魔像变体",
+        "Farm.spawnGroundMonsterOffScreen",
+    ),
+}
+# These legacy stat records are not independently spawnable combat monsters in
+# the current game version.  Their location question is therefore explicitly
+# outside the combat-monster location contract, rather than an uncollected map.
+NON_SPAWNABLE_MONSTER_LOCATION_IDS = {
+    "monster:Cat",
+    "monster:Crow",
+    "monster:Fireball",
+    "monster:Frog",
+    "monster:Shadow-Guy",
+    "monster:Skeleton-Warrior",
+}
+
+
 SPECIAL_WEAPON_ACQUISITION_RULES: dict[str, tuple[str, str, str]] = {
     "2": (
         "闹鬼骷髅的诅咒娃娃变体随机掉落",
@@ -708,6 +891,13 @@ def add_typed_support_projections(
                 locator_id=locator.id,
                 transformation_rule="official-locations-monster-to-player-facts-v1",
             )
+    add_runtime_monster_location_projections(
+        package,
+        entities,
+        source_documents,
+        source_locators,
+        game_version,
+    )
     add_purchase_offer_projections(
         package,
         entities,
@@ -735,6 +925,107 @@ def add_typed_support_projections(
     )
     package.source_documents = sorted(source_documents.values(), key=lambda item: item.id)
     package.source_locators = sorted(source_locators.values(), key=lambda item: item.id)
+
+
+def add_runtime_monster_location_projections(
+    package: Schema5Package,
+    entities: list[NormalizedEntity],
+    source_documents: dict[str, Schema5SourceDocument],
+    source_locators: dict[str, Schema5SourceLocator],
+    game_version: str,
+) -> None:
+    """Project version-bound monster encounters from official runtime selectors."""
+    monster_ids = {entity.id for entity in entities if entity.entity_type == "monster"}
+
+    source_id = "source:official-rule:monster-locations"
+    source_documents.setdefault(
+        source_id,
+        Schema5SourceDocument(
+            id=source_id,
+            source_kind="official_derived",
+            title="Stardew Valley.dll · runtime monster spawn rules",
+            game_version=game_version,
+        ),
+    )
+    for monster_id, (location, summary, method) in sorted(RUNTIME_MONSTER_LOCATION_RULES.items()):
+        if monster_id not in monster_ids:
+            continue
+        locator_id = f"locator:official-rule:monster-location:{stable_part(method)}"
+        source_locators.setdefault(
+            locator_id,
+            Schema5SourceLocator(
+                id=locator_id,
+                source_document_id=source_id,
+                source_file="Stardew Valley.dll",
+                record_key=method,
+            ),
+        )
+        condition_id = f"condition:monster-location-runtime:{stable_part(monster_id)}"
+        package.condition_sets.append(
+            Schema5ConditionSet(
+                id=condition_id,
+                completeness="complete",
+                player_summary=summary,
+            )
+        )
+        package.condition_terms.append(
+            Schema5ConditionTerm(
+                id=f"condition-term:{stable_part(condition_id)}:runtime-spawn",
+                condition_set_id=condition_id,
+                ordinal=0,
+                kind="runtime_spawn_rule",
+                value_text=summary,
+            )
+        )
+        slot_id = f"fact:{monster_id}:locations"
+        ordinal = sum(1 for item in package.fact_items if item.slot_id == slot_id)
+        item = add_support_fact_item(
+            package,
+            monster_id,
+            "locations",
+            "text",
+            text_value=location,
+            scope_id=f"monster-location-runtime:{monster_id}",
+            condition_set_id=condition_id,
+            ordinal=ordinal,
+            locator_id=locator_id,
+            transformation_rule="official-runtime-monster-location-to-player-facts-v1",
+            status="conditional",
+        )
+        add_support_facet(
+            package,
+            entity_id=monster_id,
+            family="monster_location",
+            item=item,
+            condition_set_id=condition_id,
+            locator_id=locator_id,
+            transformation_rule="official-runtime-monster-location-to-player-facts-v1",
+        )
+    for monster_id in sorted(NON_SPAWNABLE_MONSTER_LOCATION_IDS & monster_ids):
+        locator_id = f"locator:official-rule:monster-location:{stable_part(monster_id)}"
+        source_locators.setdefault(
+            locator_id,
+            Schema5SourceLocator(
+                id=locator_id,
+                source_document_id=source_id,
+                source_file="Stardew Valley.dll",
+                record_key="runtime-monster-spawn-audit",
+            ),
+        )
+        add_support_fact_item(
+            package,
+            monster_id,
+            "locations",
+            "text",
+            text_value="当前版本不作为独立可生成战斗怪物",
+            scope_id=f"monster-location-not-applicable:{monster_id}",
+            condition_set_id=None,
+            ordinal=0,
+            locator_id=locator_id,
+            transformation_rule="official-current-version-nonspawnable-monster-v1",
+            status="not_applicable",
+        )
+
 
 
 def add_purchase_offer_projections(
