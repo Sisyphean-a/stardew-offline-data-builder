@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -300,30 +301,42 @@ def typed_coverage(package: Schema5Package) -> dict[str, object]:
     }
 
 
+def _move_or_copy_tree(source: Path, target: Path) -> None:
+    """把目录移动到位；Windows 下目标被占用时退回复制后备。"""
+    for _ in range(2):
+        try:
+            source.replace(target)
+            return
+        except PermissionError:
+            time.sleep(0.6)
+    shutil.copytree(source, target, dirs_exist_ok=True)
+    shutil.rmtree(source, ignore_errors=True)
+
+
 def quarantine_candidate_output(output_dir: Path) -> None:
     if not output_dir.exists():
         return
     previous_dir = output_dir.with_name(f"{output_dir.name}.previous")
     if previous_dir.exists():
-        shutil.rmtree(previous_dir)
-    output_dir.replace(previous_dir)
+        shutil.rmtree(previous_dir, ignore_errors=True)
+    _move_or_copy_tree(output_dir, previous_dir)
 
 
 def replace_candidate_directory(staging_dir: Path, output_dir: Path) -> None:
     backup_dir = output_dir.with_name(f"{output_dir.name}.previous")
     if backup_dir.exists():
-        shutil.rmtree(backup_dir)
+        shutil.rmtree(backup_dir, ignore_errors=True)
     try:
         if output_dir.exists():
-            output_dir.replace(backup_dir)
-        staging_dir.replace(output_dir)
+            _move_or_copy_tree(output_dir, backup_dir)
+        _move_or_copy_tree(staging_dir, output_dir)
     except Exception:
         if not output_dir.exists() and backup_dir.exists():
-            backup_dir.replace(output_dir)
+            _move_or_copy_tree(backup_dir, output_dir)
         raise
     else:
         if backup_dir.exists():
-            shutil.rmtree(backup_dir)
+            shutil.rmtree(backup_dir, ignore_errors=True)
 
 
 def preserve_failed_candidate(

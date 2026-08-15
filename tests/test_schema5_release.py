@@ -70,6 +70,70 @@ def test_coverage_regression_budget_blocks_core_slot_deterioration(tmp_path: Pat
         )
 
 
+def test_regression_budget_ignores_legacy_manifest_without_coverage(tmp_path: Path) -> None:
+    previous = tmp_path / "candidate"
+    previous.mkdir()
+    (previous / "manifest.json").write_text(
+        json.dumps({"format": "legacy-v4", "schemaVersion": 4}), encoding="utf-8"
+    )
+    # 旧格式历史包不是 schema 5 基线：不得崩溃或阻塞构建。
+    validate_regression_budget(
+        previous,
+        {"core": {"bySlot": {"crop:sell_price": {"answeredRate": 1.0, "notCollectedRate": 0.0}}}},
+    )
+
+
+def test_regression_budget_ignores_legacy_database_without_schema5_tables(
+    tmp_path: Path,
+) -> None:
+    from builder.models import NormalizedEntity
+    from builder.pipeline.schema5_projection import build_schema5_staging_package
+
+    previous = tmp_path / "candidate"
+    previous.mkdir()
+    (previous / "manifest.json").write_text(
+        json.dumps(
+            {
+                "coverage": {
+                    "release": {
+                        "core": {"bySlot": {"crop:sell_price": {
+                            "answeredRate": 1.0, "notCollectedRate": 0.0,
+                        }}}
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    with sqlite3.connect(previous / "stardew.db") as connection:
+        connection.execute("CREATE TABLE entities (id TEXT PRIMARY KEY)")
+    package = build_schema5_staging_package(
+        [
+            NormalizedEntity(
+                id="object:24",
+                entity_type="object",
+                game_id="24",
+                internal_name=None,
+                name_zh="防风草",
+                name_en=None,
+                description_zh=None,
+                description_en=None,
+                category=None,
+                extra_json={"Price": 35},
+                source_file="Data/Objects.json",
+            )
+        ],
+        tmp_path,
+        game_version="1.6.15",
+    )
+    # 旧格式数据库缺少 fact_slots 等 schema 5 表：不得崩溃。
+    validate_regression_budget(
+        previous,
+        {"core": {"bySlot": {"crop:sell_price": {"answeredRate": 1.0, "notCollectedRate": 0.0}}}},
+        current_package=package,
+    )
+
+
 def test_formal_schema5_candidate_writes_publishable_package_and_typed_database(
     tmp_path: Path,
 ) -> None:

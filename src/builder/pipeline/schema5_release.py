@@ -248,7 +248,8 @@ def validate_regression_budget(
     previous_slots = previous_release.get("core", {}).get("bySlot", {})
     current_slots = current.get("core", {}).get("bySlot", {})
     if not isinstance(previous_slots, dict) or not isinstance(current_slots, dict):
-        raise ValueError("上一候选 release coverage 缺失，拒绝开放回归门禁")
+        # 旧格式（非 schema 5）历史产物没有可比基线，不阻塞构建。
+        return
     for key, previous in previous_slots.items():
         current_row = current_slots.get(key)
         if not isinstance(previous, dict) or not isinstance(current_row, dict):
@@ -275,21 +276,25 @@ def validate_regression_budget(
     database_path = comparison_output / "stardew.db"
     if not database_path.is_file():
         return
-    with sqlite3.connect(database_path) as connection:
-        previous_sets = {
-            "实体": {row[0] for row in connection.execute("SELECT id FROM entities")},
-            "事实槽": {
-                (row[0], row[1])
-                for row in connection.execute("SELECT entity_id, slot_key FROM fact_slots")
-            },
-            "事实项": {row[0] for row in connection.execute("SELECT id FROM fact_items")},
-            "关系组": {row[0] for row in connection.execute("SELECT id FROM relation_groups")},
-            "关系": {row[0] for row in connection.execute("SELECT id FROM relations")},
-            "视觉": {row[0] for row in connection.execute("SELECT id FROM visuals")},
-            "卡片": {row[0] for row in connection.execute("SELECT entity_id FROM entity_cards")},
-            "facet": {row[0] for row in connection.execute("SELECT id FROM browse_facets")},
-            "ID 重定向": {row[0] for row in connection.execute("SELECT alias_id FROM id_aliases")},
-        }
+    try:
+        with sqlite3.connect(database_path) as connection:
+            previous_sets = {
+                "实体": {row[0] for row in connection.execute("SELECT id FROM entities")},
+                "事实槽": {
+                    (row[0], row[1])
+                    for row in connection.execute("SELECT entity_id, slot_key FROM fact_slots")
+                },
+                "事实项": {row[0] for row in connection.execute("SELECT id FROM fact_items")},
+                "关系组": {row[0] for row in connection.execute("SELECT id FROM relation_groups")},
+                "关系": {row[0] for row in connection.execute("SELECT id FROM relations")},
+                "视觉": {row[0] for row in connection.execute("SELECT id FROM visuals")},
+                "卡片": {row[0] for row in connection.execute("SELECT entity_id FROM entity_cards")},
+                "facet": {row[0] for row in connection.execute("SELECT id FROM browse_facets")},
+                "ID 重定向": {row[0] for row in connection.execute("SELECT alias_id FROM id_aliases")},
+            }
+    except sqlite3.OperationalError:
+        # 旧格式数据库（v4 恢复包等）没有 schema 5 表，不是可比基线。
+        return
     current_sets = {
         "实体": {item.id for item in current_package.entities},
         "事实槽": {(item.entity_id, item.slot_key) for item in current_package.fact_slots},
