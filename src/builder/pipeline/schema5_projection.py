@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections import defaultdict
 from dataclasses import replace
 from pathlib import Path
@@ -78,6 +79,77 @@ GAME_STATE_QUERY_LABELS = {
     "WORLD_STATE_FIELD": "世界状态字段",
     "YEAR": "年份",
 }
+# Accepted argument shapes observed in the version-bound official data. A new
+# shape is not silently treated as complete: it remains opaque for review.
+GAME_STATE_QUERY_ARGUMENT_COUNTS = {
+    "DAY_OF_MONTH": range(1, 32),
+    "DAY_OF_WEEK": {1},
+    "DAYS_PLAYED": {1},
+    "IS_COMMUNITY_CENTER_COMPLETE": {0},
+    "IS_FESTIVAL_DAY": {0},
+    "IS_MULTIPLAYER": {0},
+    "IS_PASSIVE_FESTIVAL_OPEN": {1},
+    "ITEM_CONTEXT_TAG": {2},
+    "ITEM_EDIBILITY": {2},
+    "LOCATION_SEASON": {2, 3, 4},
+    "MINE_LOWEST_LEVEL_REACHED": {1},
+    "MUSEUM_DONATIONS": {2, 3},
+    "PLAYER_BASE_FARMING_LEVEL": {2},
+    "PLAYER_BASE_FISHING_LEVEL": {2},
+    "PLAYER_FARMHOUSE_UPGRADE": {2},
+    "PLAYER_HAS_CONVERSATION_TOPIC": {2},
+    "PLAYER_HAS_CRAFTING_RECIPE": {2, 3},
+    "PLAYER_HAS_ITEM": {2},
+    "PLAYER_HAS_MAIL": {2, 3},
+    "PLAYER_HAS_SEEN_EVENT": {2},
+    "PLAYER_HEARTS": {3},
+    "PLAYER_NPC_RELATIONSHIP": {3, 4, 5},
+    "PLAYER_SPECIAL_ORDER_RULE_ACTIVE": {2},
+    "PLAYER_STAT": {3},
+    "RANDOM": {1, 2, 5},
+    "SEASON": {1, 2},
+    "SYNCED_CHOICE": {5},
+    "SYNCED_RANDOM": {3, 4},
+    "TIME": {1, 2},
+    "WEATHER": {2, 4},
+    "WORLD_STATE_FIELD": {2, 3},
+    "YEAR": {1},
+}
+GAME_STATE_QUERY_MIN_ARGUMENTS = {
+    "ANY": 1,
+    "DAY_OF_MONTH": 1,
+    "DAY_OF_WEEK": 1,
+    "DAYS_PLAYED": 1,
+    "IS_COMMUNITY_CENTER_COMPLETE": 0,
+    "IS_FESTIVAL_DAY": 0,
+    "IS_MULTIPLAYER": 0,
+    "IS_PASSIVE_FESTIVAL_OPEN": 1,
+    "ITEM_CONTEXT_TAG": 2,
+    "ITEM_EDIBILITY": 2,
+    "LOCATION_SEASON": 2,
+    "MINE_LOWEST_LEVEL_REACHED": 1,
+    "MUSEUM_DONATIONS": 1,
+    "PLAYER_BASE_FARMING_LEVEL": 2,
+    "PLAYER_BASE_FISHING_LEVEL": 2,
+    "PLAYER_FARMHOUSE_UPGRADE": 2,
+    "PLAYER_HAS_CONVERSATION_TOPIC": 2,
+    "PLAYER_HAS_CRAFTING_RECIPE": 2,
+    "PLAYER_HAS_ITEM": 2,
+    "PLAYER_HAS_MAIL": 2,
+    "PLAYER_HAS_SEEN_EVENT": 2,
+    "PLAYER_HEARTS": 3,
+    "PLAYER_NPC_RELATIONSHIP": 3,
+    "PLAYER_SPECIAL_ORDER_RULE_ACTIVE": 2,
+    "PLAYER_STAT": 3,
+    "RANDOM": 1,
+    "SEASON": 1,
+    "SYNCED_CHOICE": 3,
+    "SYNCED_RANDOM": 3,
+    "TIME": 2,
+    "WEATHER": 2,
+    "WORLD_STATE_FIELD": 3,
+    "YEAR": 1,
+}
 
 # These tables mirror the item branches in the official game code.  They are
 # deliberately separate from Weapons.json's MineBaseLevel/MineMinLevel fields:
@@ -152,6 +224,13 @@ VOLCANO_CHEST_WEAPONS: dict[str, int] = {
 # ``Monsters.json`` is a combat-stat catalogue, not a spawn table.  These
 # rules mirror the runtime selectors that create the named catalogue monster.
 # A rule records a possible player encounter, never a guaranteed spawn rate.
+# Runtime location rules are decompiled from this exact game assembly. A
+# different game version or DLL hash must be re-audited before it can answer
+# location core slots.
+RUNTIME_MONSTER_LOCATION_BINDING = (
+    "1.6.15.24356",
+    "7f1e5b8e58d2758b78570ba771bbeb03d33522f62188bf6c32edf0cf626deaee",
+)
 RUNTIME_MONSTER_LOCATION_RULES: dict[str, tuple[str, str, str]] = {
     "monster:Bat": (
         "矿井",
@@ -972,6 +1051,7 @@ def add_typed_support_projections(
         source_documents,
         source_locators,
         game_version,
+        official_release_binding,
     )
     add_purchase_offer_projections(
         package,
@@ -1009,8 +1089,16 @@ def add_runtime_monster_location_projections(
     source_documents: dict[str, Schema5SourceDocument],
     source_locators: dict[str, Schema5SourceLocator],
     game_version: str,
+    official_release_binding: tuple[str, str] | None,
 ) -> None:
     """Project version-bound monster encounters from official runtime selectors."""
+    expected_version, expected_dll_hash = RUNTIME_MONSTER_LOCATION_BINDING
+    if (
+        game_version != expected_version
+        or official_release_binding is None
+        or official_release_binding[0] != expected_dll_hash
+    ):
+        return
     monster_ids = {entity.id for entity in entities if entity.entity_type == "monster"}
 
     source_id = "source:official-rule:monster-locations"
@@ -1021,6 +1109,7 @@ def add_runtime_monster_location_projections(
             source_kind="official_derived",
             title="Stardew Valley.dll · runtime monster spawn rules",
             game_version=game_version,
+            content_hash=expected_dll_hash,
         ),
     )
     for monster_id, (location, summary, method) in sorted(RUNTIME_MONSTER_LOCATION_RULES.items()):
@@ -1040,7 +1129,9 @@ def add_runtime_monster_location_projections(
         package.condition_sets.append(
             Schema5ConditionSet(
                 id=condition_id,
-                completeness="complete",
+                # This table preserves the official method and a player-readable
+                # encounter summary, not every runtime branch operand.
+                completeness="partial",
                 player_summary=summary,
             )
         )
@@ -2405,15 +2496,39 @@ def game_state_query_terms(
     value: str,
     ordinal: int,
 ) -> tuple[list[Schema5ConditionTerm], list[str], bool]:
-    """Translate supported GameStateQuery clauses without evaluating a save."""
+    """Translate structurally valid GameStateQuery clauses without evaluating a save."""
     terms: list[Schema5ConditionTerm] = []
     summaries: list[str] = []
     for index, raw_clause in enumerate(value.split(",")):
         clause = raw_clause.strip()
         negated = clause.startswith("!")
         display = clause[1:].strip() if negated else clause
-        predicate = display.split(maxsplit=1)[0] if display else ""
-        if not predicate or predicate not in GAME_STATE_QUERY_LABELS:
+        tokens = game_state_query_tokens(display)
+        if not tokens:
+            return [], [], False
+        predicate, arguments = tokens[0], tokens[1:]
+        if predicate not in GAME_STATE_QUERY_LABELS:
+            return [], [], False
+        if len(arguments) not in GAME_STATE_QUERY_ARGUMENT_COUNTS.get(predicate, set()):
+            return [], [], False
+        if predicate == "SEASON" and any(
+            argument.casefold() not in {"spring", "summer", "fall", "winter"}
+            for argument in arguments
+        ):
+            return [], [], False
+        if predicate == "LOCATION_SEASON" and any(
+            argument.casefold() not in {"spring", "summer", "fall", "winter"}
+            for argument in arguments[1:]
+        ):
+            return [], [], False
+        if predicate in {"YEAR", "DAYS_PLAYED", "MINE_LOWEST_LEVEL_REACHED"} and not all(
+            argument.isdigit() for argument in arguments
+        ):
+            return [], [], False
+        # `ANY` carries a nested OR tree. Until every child is emitted with
+        # its own typed predicate and grouping semantics, retain the source as
+        # opaque instead of misrepresenting the parent text as complete.
+        if predicate == "ANY":
             return [], [], False
         label = GAME_STATE_QUERY_LABELS[predicate]
         summaries.append(f"不满足{label}：{display}" if negated else f"{label}：{display}")
@@ -2425,11 +2540,19 @@ def game_state_query_terms(
                 ),
                 condition_set_id=condition_id,
                 ordinal=ordinal + index,
-                kind="game_state_query",
+                kind=f"game_state_query:{predicate.casefold()}",
                 value_text=clause,
             )
         )
     return terms, summaries, True
+
+
+def game_state_query_tokens(value: str) -> list[str] | None:
+    """Read shell-like quoted query arguments and reject malformed quoting."""
+    if value.count('"') % 2:
+        return None
+    tokens = [quoted or bare for quoted, bare in re.findall(r'"([^"]*)"|(\S+)', value)]
+    return tokens if all(token.strip() for token in tokens) else None
 
 
 def opaque_rule_condition(

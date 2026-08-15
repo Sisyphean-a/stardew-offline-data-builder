@@ -110,8 +110,12 @@ def test_runtime_monster_location_uses_auditable_conditional_rule(tmp_path: Path
     package = build_schema5_staging_package(
         [entity("monster:Lava-Lurk", "monster")],
         tmp_path,
-        game_version="1.6.15",
+        game_version="1.6.15.24356",
         support=OfficialSupportData(),
+        official_release_binding=(
+            "7f1e5b8e58d2758b78570ba771bbeb03d33522f62188bf6c32edf0cf626deaee",
+            "fixture-assets",
+        ),
     )
 
     slot = next(
@@ -123,7 +127,7 @@ def test_runtime_monster_location_uses_auditable_conditional_rule(tmp_path: Path
     condition = next(
         condition for condition in package.condition_sets if condition.id == item.condition_set_id
     )
-    assert condition.completeness == "complete"
+    assert condition.completeness == "partial"
     assert "熔岩区" in str(condition.player_summary)
     locator = next(
         locator
@@ -133,12 +137,33 @@ def test_runtime_monster_location_uses_auditable_conditional_rule(tmp_path: Path
     assert locator.source_file == "Stardew Valley.dll"
 
 
+def test_game_state_query_rejects_incomplete_or_malformed_predicates() -> None:
+    from builder.pipeline.schema5_projection import game_state_query_terms
+
+    assert game_state_query_terms("condition:test", "SEASON", 0)[2] is False
+    assert game_state_query_terms("condition:test", "PLAYER_HEARTS Alex", 0)[2] is False
+    assert game_state_query_terms("condition:test", 'ANY "SEASON spring', 0)[2] is False
+    assert game_state_query_terms("condition:test", 'ANY "SEASON spring" "YEAR 2"', 0)[2] is False
+    assert game_state_query_terms("condition:test", "SEASON spring unexpected", 0)[2] is False
+    assert (
+        game_state_query_terms(
+            "condition:test", "IS_COMMUNITY_CENTER_COMPLETE unexpected", 0
+        )[2]
+        is False
+    )
+    assert game_state_query_terms("condition:test", "YEAR not-a-number", 0)[2] is False
+
+
 def test_nonspawnable_legacy_monster_location_is_not_applicable(tmp_path: Path) -> None:
     package = build_schema5_staging_package(
         [entity("monster:Crow", "monster")],
         tmp_path,
-        game_version="1.6.15",
+        game_version="1.6.15.24356",
         support=OfficialSupportData(),
+        official_release_binding=(
+            "7f1e5b8e58d2758b78570ba771bbeb03d33522f62188bf6c32edf0cf626deaee",
+            "fixture-assets",
+        ),
     )
 
     slot = next(slot for slot in package.fact_slots if slot.id == "fact:monster:Crow:locations")
@@ -160,8 +185,12 @@ def test_noncombat_monster_ignores_legacy_drop_record(tmp_path: Path) -> None:
             ),
         ],
         tmp_path,
-        game_version="1.6.15",
+        game_version="1.6.15.24356",
         support=OfficialSupportData(),
+        official_release_binding=(
+            "7f1e5b8e58d2758b78570ba771bbeb03d33522f62188bf6c32edf0cf626deaee",
+            "fixture-assets",
+        ),
     )
     slot = next(slot for slot in package.fact_slots if slot.id == "fact:monster:Crow:drops")
     assert slot.status == "not_applicable"
