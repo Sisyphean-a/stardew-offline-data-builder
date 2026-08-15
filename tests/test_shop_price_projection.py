@@ -183,7 +183,7 @@ def test_seedshop_out_of_season_multiplier_is_retained_as_a_dynamic_rule(
     price = price_items(package, "fact:crop:2:seed_purchase_price")[0]
     rule = price_items(package, "fact:crop:2:seed_purchase_price_rule")[0]
     assert price.integer_value == 50
-    assert rule.text_value == "out-of-season-price-rule"
+    assert rule.text_value == "反季节时按游戏规则加价"
     assert next(row for row in package.shop_price_diagnostics if row["entityId"] == "crop:2")[
         "dynamicRule"
     ] == "out-of-season-price-rule"
@@ -290,7 +290,7 @@ def test_negative_trade_price_with_dynamic_modifier_is_a_dynamic_rule(
 
     assert not price_items(package, "fact:object:1:purchase_price")
     rule = price_items(package, "fact:object:1:purchase_price_rule")[0]
-    assert rule.text_value == "conditional-or-random-price-modifier"
+    assert rule.text_value == "受条件或随机价格修正影响"
     diagnostic = package.shop_price_diagnostics[0]
     assert diagnostic["kind"] == "dynamic"
     assert diagnostic["reason"] == "conditional-or-random-price-modifier"
@@ -341,7 +341,7 @@ def test_exchange_and_dynamic_prices_never_become_coin_purchase_prices(tmp_path:
     assert exchange_amount.integer_value == 3
     assert not price_items(package, "fact:crop:2:seed_purchase_price")
     rule = price_items(package, "fact:crop:2:seed_purchase_price_rule")[0]
-    assert rule.text_value == "conditional-or-random-price-modifier"
+    assert rule.text_value == "受条件或随机价格修正影响"
     rule_slot = next(slot for slot in package.fact_slots if slot.id == rule.slot_id)
     assert rule_slot.status == "dynamic_rule"
     price_slot = next(

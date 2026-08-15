@@ -499,7 +499,7 @@ def test_villager_support_records_aggregate_into_typed_fact_items(tmp_path: Path
                 extra_json={
                     "GiftTastes": [
                         {"preference": "loved", "items": ["24", "category_fruits"]},
-                        {"preference": "hated", "items": ["missing"]},
+                        {"preference": "hated", "items": ["24", "missing"]},
                     ]
                 },
             ),
@@ -508,11 +508,14 @@ def test_villager_support_records_aggregate_into_typed_fact_items(tmp_path: Path
     slots = {slot.slot_key: slot for slot in package.fact_slots}
     assert {"schedule", "gift_preferences"} <= slots.keys()
     assert {item.text_value for item in package.fact_items} >= {
-        "时间：06:00；地点：Town",
+        "时间：6:00；地点：鹈鹕镇",
         "object:24",
-        "类别引用：fruits",
-        "未解析礼物引用：missing",
+        "水果",
     }
+    assert "missing" not in {item.text_value for item in package.fact_items}
+    assert any(
+        row["token"] == "missing" for row in package.gift_reference_diagnostics
+    )
     assert any(":loved:" in (item.scope_id or "") for item in package.fact_items)
     assert any(":hated:" in (item.scope_id or "") for item in package.fact_items)
     assert all(
@@ -544,11 +547,20 @@ def test_villager_projection_keeps_residence_gender_and_relationship_semantics(
         tmp_path,
         game_version="1.6.15",
     )
-    facts = {fact.slot_key: fact for fact in package.fact_slots}
-    assert facts["residence_region"].text_value == "Town"
-    assert facts["gender"].text_value == "Female"
+    facts = {
+        fact.slot_key: fact
+        for fact in package.fact_slots
+        if fact.entity_id == "villager:Abigail"
+    }
+    assert facts["residence_region"].text_value == "鹈鹕镇"
+    assert facts["gender"].text_value == "女性"
     assert facts["can_be_romanced"].boolean_value is True
-    assert facts["birthday"].text_value == "Fall 13"
+    assert facts["birthday"].text_value == "秋季 13 日"
+    assert any(
+        slot.slot_key == "gender" and slot.status == "not_applicable"
+        for slot in package.fact_slots
+        if slot.entity_id == "villager:Sebastian"
+    ), "未注明性别的村民应输出 not_applicable 性别槽"
     assert package.relations[0].predicate == "love_interest_pointer"
     assert package.relations[0].object_entity_id == "villager:Sebastian"
 
@@ -581,10 +593,10 @@ def test_fish_projection_emits_typed_core_fields_and_sell_price(
     )
     facts = {fact.slot_key: fact for fact in package.fact_slots}
     assert facts["difficulty"].integer_value == 80
-    assert facts["behavior"].text_value == "floater"
-    assert facts["fishing_time"].text_value == "1200 1600"
-    assert facts["seasons"].text_value == "summer"
-    assert facts["weather"].text_value == "sunny"
+    assert facts["behavior"].text_value == "漂浮型"
+    assert facts["fishing_time"].text_value == "12:00–16:00"
+    assert facts["seasons"].text_value == "夏季"
+    assert facts["weather"].text_value == "晴天"
     assert facts["sell_price"].integer_value == 200
 
 
@@ -612,7 +624,7 @@ def test_mine_fish_support_projection_emits_depth_bands_and_dll_locator(
     stonefish = next(
         item for item in package.fact_items if item.id.startswith("fact-item:fish:158:")
     )
-    assert stonefish.text_value == "Mine"
+    assert stonefish.text_value == "矿井"
     assert stonefish.condition_set_id is not None
     condition = next(c for c in package.condition_sets if c.id == stonefish.condition_set_id)
     assert "矿井起始层：1" in (condition.player_summary or "")
@@ -659,15 +671,15 @@ def test_fish_support_projection_emits_stable_scoped_location_and_condition(
     fishing_facet = next(
         facet for facet in package.facets if facet.scope_family == "fishing_location"
     )
-    assert fishing_facet.text_value == "Beach"
+    assert fishing_facet.text_value == "海滩"
     assert fishing_facet.scope_id == item.scope_id
     card = next(card for card in package.entity_cards if card.entity_id == "fish:128")
-    assert card.action_summary_1 == "地点：Beach"
+    assert card.action_summary_1 == "地点：海滩"
     condition = next(
         condition for condition in package.condition_sets if condition.id == item.condition_set_id
     )
     assert condition.completeness == "complete"
-    assert "季节：Spring" in (condition.player_summary or "")
+    assert "季节：春季" in (condition.player_summary or "")
     assert {term.kind for term in package.condition_terms} == {
         "season",
         "chance",
@@ -690,14 +702,14 @@ def test_monster_support_projection_emits_typed_location_and_locator(
         game_version="1.6.15",
         support=OfficialSupportData(
             locations={
-                "Mines": {
+                "UndergroundMine": {
                     "Monsters": [{"Id": "Green Slime"}],
                 }
             }
         ),
     )
     item = next(item for item in package.fact_items if item.slot_id.endswith(":locations"))
-    assert item.text_value == "Mines"
+    assert item.text_value == "矿井"
     assert item.scope_id.startswith("monster-location:monster:Green-Slime:")
     locator = next(locator for locator in package.source_locators if locator.id == next(
         evidence.source_locator_id
@@ -705,7 +717,7 @@ def test_monster_support_projection_emits_typed_location_and_locator(
         if evidence.id.endswith(stable_part(item.id))
     ))
     assert locator.source_file == "Data/Locations.json"
-    assert locator.json_path == "$.Mines.Monsters[*]"
+    assert locator.json_path == "$.UndergroundMine.Monsters[*]"
     assert any(facet.scope_family == "monster_location" for facet in package.facets)
     validate_schema5_package(package, publishable=True)
 
@@ -821,7 +833,7 @@ def test_shop_projection_emits_purchase_and_seed_offer_facts(tmp_path: Path) -> 
         if condition.id == object_price.condition_set_id
     )
     assert condition.completeness == "complete"
-    assert "季节：SEASON spring" == condition.player_summary
+    assert "季节：春季" == condition.player_summary
     assert any(
         item.slot_id == "fact:object:472:purchase_currency"
         and item.text_value == "金币"
@@ -930,7 +942,7 @@ def test_crop_projection_emits_typed_core_slots(tmp_path: Path) -> None:
         game_version="1.6.15",
     )
     facts = {fact.slot_key: fact for fact in package.fact_slots}
-    assert facts["seasons"].text_value == "Spring"
+    assert facts["seasons"].text_value == "春季"
     assert facts["first_harvest_days"].integer_value == 4
     assert facts["regrow_days"].status == "not_applicable"
     assert facts["needs_watering"].boolean_value is True

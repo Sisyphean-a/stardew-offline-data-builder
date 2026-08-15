@@ -30,8 +30,9 @@ from builder.models_schema5 import (
 )
 from builder.pipeline.official_item_index import ItemReferenceResolver
 from builder.pipeline.official_references import build_reference_index
-from builder.pipeline.official_shop_references import build_shop_index
-from builder.pipeline.official_values import entity_ids_for_item, parse_ingredients
+from builder.pipeline.official_shop_references import build_shop_index, shop_offer
+from builder.pipeline.official_values import dictionary_list, entity_ids_for_item, parse_ingredients
+from builder.pipeline.normalize_titles import VILLAGER_DISPLAY_NAMES
 from builder.sources.official_support import OfficialSupportData
 from builder.utils.hashing import sha256_file
 
@@ -40,6 +41,539 @@ from builder.utils.hashing import sha256_file
 structured_attributes = production_attributes
 
 RELATION_FAMILIES = {"kinship", "friendship", "love_interest"}
+
+# 玩家可读中文规范值（值来自游戏 zh-CN Strings 与社区通用译名；见 RECOVERY R2）。
+SEASON_ZH = {"spring": "春季", "summer": "夏季", "fall": "秋季", "winter": "冬季"}
+
+GENDER_ZH = {"Female": "女性", "Male": "男性"}
+
+RESIDENCE_REGION_ZH = {
+    "Town": "鹈鹕镇",
+    "Desert": "沙漠",
+    "Other": "鹈鹕镇周边",
+}
+
+# 官方 Object.Category 常量 → 游戏 zh-CN 类别名（来自 GetCategoryDisplayName
+# 与 StringsFromCSFiles.zh-CN.json 的逐项对应）。
+GIFT_CATEGORY_ZH = {
+    -2: "矿物", -12: "矿物",
+    -75: "蔬菜",
+    -4: "鱼",
+    -25: "菜品", -7: "菜品",
+    -79: "水果",
+    -74: "种子",
+    -19: "化肥",
+    -21: "鱼饵",
+    -22: "钓具",
+    -24: "装饰",
+    -20: "垃圾",
+    -27: "工匠物品", -26: "工匠物品",
+    -8: "制造品",
+    -18: "动物制品", -14: "动物制品", -6: "动物制品", -5: "动物制品",
+    -80: "花",
+    -28: "怪物战利品",
+    -16: "资源", -15: "资源",
+    -81: "采集品",
+    -97: "鞋类",
+    -100: "服装",
+    -96: "戒指",
+    -99: "工具",
+    -102: "书",
+    -103: "技能书",
+}
+
+# 礼物列表中的上下文标签 → 中文短语（游戏通过 item.HasContextTag 匹配）。
+GIFT_CONTEXT_TAG_ZH = {
+    "edible_mushroom": "食用蘑菇",
+    "book_item": "书",
+    "forage_item_beach": "海滩采集品",
+    "ancient_item": "古代物品",
+    "doll_item": "玩偶",
+    "toy_item": "玩具",
+    "category_trinket": "饰品",
+    "category_fruits": "水果",
+    "category_vegetable": "蔬菜",
+    "category_flower": "花",
+}
+
+# 日程内部地点代号 → 中文地名（社区通用译名）。
+SCHEDULE_LOCATION_ZH = {
+    "SamHouse": "山姆家",
+    "JoshHouse": "亚历克斯家",
+    "HaleyHouse": "海莉家",
+    "ScienceHouse": "木匠铺",
+    "SebastianRoom": "塞巴斯蒂安的房间",
+    "HarveyRoom": "哈维的房间",
+    "AnimalShop": "玛妮的牧场",
+    "SeedShop": "皮埃尔杂货店",
+    "Saloon": "星之果实餐吧",
+    "JojaMart": "Joja超市",
+    "CommunityCenter": "社区中心",
+    "Hospital": "诊所",
+    "Blacksmith": "铁匠铺",
+    "ArchaeologyHouse": "博物馆",
+    "Beach": "海滩",
+    "Town": "鹈鹕镇",
+    "Mountain": "山区",
+    "Forest": "森林",
+    "Desert": "沙漠",
+    "Railroad": "铁路",
+    "BusStop": "公交车站",
+    "BathHouse_Entry": "温泉",
+    "BathHouse_MensLocker": "温泉",
+    "ElliottHouse": "艾利欧特小屋",
+    "LeahHouse": "莉亚小屋",
+    "LeoTreeHouse": "雷欧的树屋",
+    "ManorHouse": "镇长庄园",
+    "SandyHouse": "桑迪的家",
+    "Tent": "帐篷",
+    "Trailer": "房车",
+    "FishShop": "鱼店",
+    "Sunroom": "阳光房",
+    "IslandEast": "姜岛东部",
+    "IslandHut": "姜岛小屋",
+    "IslandNorth": "姜岛北部",
+    "IslandShrine": "姜岛神殿",
+    "IslandSouth": "姜岛南部",
+    "bed": "回家睡觉",
+}
+
+SCHEDULE_DAY_ZH = {
+    "Mon": "周一", "Tue": "周二", "Wed": "周三", "Thu": "周四",
+    "Fri": "周五", "Sat": "周六", "Sun": "周日",
+}
+
+SCHEDULE_SEASON_ZH = {
+    "spring": "春季", "summer": "夏季", "fall": "秋季", "winter": "冬季",
+}
+
+# 商店动态报价规则的玩家文案（内部 reason 不进入玩家事实）。
+PRICE_RULE_REASON_ZH = {
+    "runtime-profit-margin": "受利润率设置影响",
+    "runtime-sale-price": "基础价由游戏运行时数据决定",
+    "object-data-price-unresolved": "基础价来自官方物品数据",
+    "conditional-or-random-price-modifier": "受条件或随机价格修正影响",
+    "out-of-season-price-rule": "反季节时按游戏规则加价",
+}
+
+
+def localized_seasons(value: object) -> str | None:
+    if isinstance(value, list):
+        raw = " ".join(str(item).strip() for item in value if str(item).strip())
+    else:
+        raw = text_value(value)
+    if not raw:
+        return None
+    parts = [part.strip() for part in raw.replace(",", " ").split() if part.strip()]
+    localized = [SEASON_ZH.get(part.lower()) for part in parts]
+    if all(localized):
+        return " ".join(item for item in localized if item)
+    return raw
+
+
+# 商店 → 中文地点（依据官方店主日程与游戏世界知识的人工复核映射；
+# 证据链：Data/Shops.json Owners + Characters/schedules 的官方日程）。
+SHOP_LOCATION_ZH: dict[str, str] = {
+    "SeedShop": "皮埃尔杂货店",
+    "AnimalShop": "玛妮的牧场",
+    "FishShop": "鱼店",
+    "Blacksmith": "铁匠铺",
+    "ClintUpgrade": "铁匠铺",
+    "Saloon": "星之果实餐吧",
+    "AdventureShop": "冒险家公会",
+    "AdventureGuildRecovery": "冒险家公会",
+    "Carpenter": "木匠铺",
+    "Joja": "Joja超市",
+    "Hospital": "诊所",
+    "Dwarf": "矿井",
+    "ShadowShop": "下水道",
+    "Sandy": "沙漠",
+    "DesertTrade": "沙漠",
+    "IslandTrade": "姜岛",
+    "VolcanoShop": "姜岛火山",
+    "Casino": "沙漠赌场",
+    "QiGemShop": "姜岛（齐先生的核桃房）",
+    "Raccoon": "森林（大树桩）",
+    "HatMouse": "森林（帽子老鼠的旧屋）",
+    "IceCreamStand": "鹈鹕镇",
+    "Traveler": "森林（旅行货车）",
+    "Bookseller": "鹈鹕镇（每月造访）",
+    "BooksellerTrade": "鹈鹕镇（每月造访）",
+    "BoxOffice": "电影院",
+    "Concessions": "电影院",
+    "ResortBar": "姜岛度假村",
+    "LostItems": "镇长庄园",
+    "PetAdoption": "玛妮的牧场",
+    "Catalogue": "任意地点（家具目录）",
+    "Furniture Catalogue": "任意地点（家具目录）",
+    "JojaFurnitureCatalogue": "任意地点（家具目录）",
+    "JunimoFurnitureCatalogue": "任意地点（家具目录）",
+    "RetroFurnitureCatalogue": "任意地点（家具目录）",
+    "TrashFurnitureCatalogue": "任意地点（家具目录）",
+    "WizardFurnitureCatalogue": "任意地点（家具目录）",
+}
+
+SHOP_CATALOGUE_IDS = {
+    "Catalogue",
+    "Furniture Catalogue",
+    "JojaFurnitureCatalogue",
+    "JunimoFurnitureCatalogue",
+    "RetroFurnitureCatalogue",
+    "TrashFurnitureCatalogue",
+    "WizardFurnitureCatalogue",
+}
+
+SKILL_ZH = {
+    "farming": "耕种",
+    "fishing": "钓鱼",
+    "foraging": "采集",
+    "mining": "采矿",
+    "combat": "战斗",
+    "luck": "运气",
+}
+
+PRESERVE_OUTPUT_ZH = {
+    "Honey": "蜂蜜",
+    "Jelly": "果酱",
+    "Pickle": "泡菜",
+    "Wine": "果酒",
+    "Juice": "果汁",
+    "Roe": "鱼籽",
+    "AgedRoe": "陈年鱼籽",
+    "DriedFruit": "水果干",
+    "DriedMushroom": "蘑菇干",
+    "SmokedFish": "熏鱼",
+}
+
+TOOL_BASE_KIND_ZH = {
+    "axe": "斧头",
+    "pickaxe": "十字镐",
+    "hoe": "锄头",
+    "wateringcan": "喷壶",
+    "trashcan": "垃圾桶",
+    "pan": "淘盘",
+    "scythe": "镰刀",
+    "milkpail": "挤奶桶",
+    "shears": "剪刀",
+}
+
+TOOL_LEVEL_ZH = {0: "基础", 1: "铜", 2: "钢", 3: "金", 4: "铱"}
+
+ROD_LEVEL_ZH = {0: "竹", 2: "玻璃纤维", 3: "铱金", 4: "高级铱金"}
+
+TOOL_LEVEL_PREFIXES = ("copper", "iron", "gold", "iridium", "steel")
+
+# 鱼类与怪物地点：官方内部地图名 → 中文（社区通用译名）。
+FISHING_LOCATION_ZH = {
+    "Beach": "海滩",
+    "Farm_Beach": "海滩（海滩农场）",
+    "Farm_Forest": "森林农场",
+    "Submarine": "潜水艇（夜市）",
+    "fishingGame": "潜水艇钓鱼小游戏",
+    "Woods": "秘密森林",
+    "Town": "鹈鹕镇",
+    "Forest": "森林",
+    "Temp": "冰钓节水域",
+    "WitchSwamp": "女巫沼泽",
+    "Backwoods": "边远森林",
+    "BugLand": "突变虫穴",
+    "Desert": "沙漠",
+    "Mountain": "山区",
+    "Sewer": "下水道",
+    "UndergroundMine": "矿井",
+    "BeachNightMarket": "海滩（夜市）",
+    "IslandSouthEastCave": "姜岛东南洞穴",
+    "IslandSouthEast": "姜岛东南",
+    "IslandSouth": "姜岛南部",
+    "IslandWest": "姜岛西部",
+    "IslandNorth": "姜岛北部",
+    "Caldera": "火山口（火山地牢）",
+    "Mine": "矿井",
+}
+
+FISH_BEHAVIOR_ZH = {
+    "floater": "漂浮型",
+    "dart": "冲刺型",
+    "smooth": "平滑型",
+    "mixed": "混合型",
+    "sinker": "下沉型",
+}
+
+FISH_WEATHER_ZH = {
+    "sunny": "晴天",
+    "rainy": "雨天",
+    "both": "不限",
+}
+
+# MeleeWeapon 常量（DLL）：stabbingSword=0、dagger=1、club=2、defenseSword=3，
+# 弹弓（Slingshot）为 4；0 在运行时会被归一为 3，玩家语义都是剑。
+WEAPON_TYPE_ZH = {0: "剑", 1: "匕首", 2: "棍棒", 3: "剑", 4: "弹弓"}
+
+# 镰刀在数据里是 Type 0，但 MeleeWeapon.isScythe 覆盖其战斗语义。
+WEAPON_SCYTHE_IDS = {"47", "53", "66"}
+
+# 物品上下文/机器输入标签 → 中文（Data/Machines.json RequiredTags 全集 +
+# 家具目录 ITEM_CONTEXT_TAG 全集，版本绑定 1.6.15.24356）。
+ITEM_TAG_ZH = {
+    "category_fish": "鱼类",
+    "category_fruits": "水果",
+    "category_gem": "宝石",
+    "category_greens": "绿叶蔬菜",
+    "category_minerals": "矿物",
+    "category_vegetable": "蔬菜",
+    "egg_item": "蛋类",
+    "large_egg_item": "大蛋类",
+    "slime_egg_item": "史莱姆蛋",
+    "edible_mushroom": "可食用蘑菇",
+    "bone_item": "骨头类",
+    "keg_juice": "果汁",
+    "keg_wine": "酒",
+    "preserves_jelly": "果酱",
+    "preserves_pickle": "腌菜",
+    "preserve_sheet_index_698": "罐头制品",
+    "seedmaker_banned": "种子制造器禁用物品",
+    "crystalarium_banned": "水晶复制器禁用物品",
+    "id_o_881": "火晶石",
+    "collection_joja": "Joja 目录",
+    "collection_junimo": "祝尼魔目录",
+    "collection_retro": "复古目录",
+    "collection_trash": "垃圾目录",
+    "collection_wizard": "法师目录",
+    "collection_catalogue": "目录",
+}
+
+# ITEM_EDIBILITY 的玩家文案。
+ITEM_EDIBILITY_ZH = {
+    "1": "可食用",
+    "0": "不可食用",
+    "edible": "可食用",
+    "inedible": "不可食用",
+}
+
+# 邮件标志（PLAYER_HAS_MAIL）→ 中文（1.6.15 官方数据全集）。
+MAIL_FLAG_ZH = {
+    "CF_Fair": "集市活动",
+    "CF_Sewer": "下水道开放",
+    "ReturnScepter": "已获得回程魔杖",
+    "gotFirstJunimoChest": "已获得第一个祝尼魔箱",
+    "gotMissingStocklist": "已获得丢失的库存清单",
+    "JojaMember": "Joja 会员",
+    "Farm_Eternal": "永恒农场",
+    "WillyTropicalFish": "威利的热带鱼任务",
+    "galaxySword": "已获得银河剑",
+    "ccFishTank": "社区中心鱼缸任务",
+    "Egg Festival": "复活节",
+    "Ice Festival": "冰雪节",
+    "Island_FirstParrot": "姜岛第一只鹦鹉",
+    "Island_Turtle": "姜岛海龟",
+    "Island_UpgradeBridge": "姜岛桥升级",
+    "Island_UpgradeHouse": "姜岛小屋升级",
+    "Island_UpgradeParrotPlatform": "姜岛鹦鹉平台",
+    "Island_Resort": "姜岛度假村",
+    "Island_UpgradeTrader": "姜岛贸易商",
+    "Island_W_Obelisk": "姜岛西侧方尖碑",
+    "Island_UpgradeHouse_Mailbox": "姜岛小屋邮箱",
+    "Island_VolcanoBridge": "姜岛火山桥",
+    "Island_VolcanoShortcutOut": "姜岛火山捷径",
+}
+
+# 世界状态字段（WORLD_STATE_FIELD）→ 中文。
+WORLD_STATE_FIELD_ZH = {
+    "GoldenWalnutsFound": "金核桃数量",
+    "GoldenCoconutCracked": "金椰子已砸开",
+    "TimesFedRaccoons": "喂浣熊次数",
+    "VisitsUntilY1Guarantee": "第一年保障访问次数",
+}
+
+# 玩家统计字段（PLAYER_STAT）→ 中文。
+PLAYER_STAT_ZH = {
+    "mastery_1": "耕种精通",
+    "mastery_2": "采矿精通",
+    "mastery_3": "采集精通",
+    "mastery_4": "战斗精通",
+    "mastery_5": "钓鱼精通",
+    "hardModeMonstersKilled": "困难模式怪物击杀数",
+    "ticketPrizesClaimed": "已领取门票奖品数",
+}
+
+# 天气值（WEATHER）→ 中文。
+WEATHER_VALUE_ZH = {
+    "rain": "雨天",
+    "storm": "雷雨天",
+    "snow": "雪天",
+    "greenrain": "绿雨天",
+    "sun": "晴天",
+    "wind": "大风天",
+    "festival": "节日天气",
+}
+
+# 被动节日（IS_PASSIVE_FESTIVAL_OPEN）→ 中文。
+PASSIVE_FESTIVAL_ZH = {
+    "TroutDerby": "鳟鱼大赛",
+    "SquidFest": "鱿鱼节",
+    "NightMarket": "夜市",
+    "DesertFestival": "沙漠节",
+}
+
+# 特别订单规则（PLAYER_SPECIAL_ORDER_RULE_ACTIVE）→ 中文。
+SPECIAL_ORDER_RULE_ZH = {
+    "LEGENDARY_FAMILY": "传说之鱼家族任务",
+}
+
+# 博物馆捐赠类别（MUSEUM_DONATIONS）→ 中文。
+MUSEUM_DONATION_TYPE_ZH = {
+    "Arch": "文物",
+    "Minerals": "矿物",
+}
+
+# NPC 关系状态（PLAYER_NPC_RELATIONSHIP）→ 中文。
+RELATIONSHIP_STATUS_ZH = {
+    "Engaged": "订婚",
+    "Married": "已婚",
+    "Dating": "交往",
+    "Friendly": "友好",
+    "Roommate": "室友",
+}
+
+# 当天同步随机/选择键（SYNCED_RANDOM/SYNCED_CHOICE 的 key）→ 中文。
+SYNCED_DAY_KEY_ZH = {
+    "cart_rarecrow": "旅行货车稀有稻草人",
+    "cart_fez": "旅行货车毡帽",
+    "cart_jojaCatalogue": "旅行货车 Joja 目录",
+    "cart_retroCatalogue": "旅行货车复古目录",
+    "cart_junimoCatalogue": "旅行货车祝尼魔目录",
+    "cart_coffee_bean": "旅行货车咖啡豆",
+    "fair_tokens": "星币兑换",
+    "krobus_bread": "科罗布斯面包",
+    "bookExtraForaging": "觅食书",
+    "purplebookSale": "紫色书籍促销",
+    "secondBookSale": "第二次书籍促销",
+    "thirdBookSale": "第三次书籍促销",
+    "travelerSkillBook": "旅行者技能书",
+    "teaset": "茶具",
+    "volcano_roots_platter": "火山根拼盘",
+}
+
+# 对话主题（PLAYER_HAS_CONVERSATION_TOPIC）→ 中文。
+CONVERSATION_TOPIC_ZH = {
+    "willyCrabs": "威利的螃蟹话题",
+}
+
+# 价格修正方式与作用域（商店报价规则）。
+PRICE_MODIFIER_SCOPE_ZH = {
+    "priceModifiers": "商品价格修正",
+    "shopPriceModifiers": "商店价格修正",
+}
+PRICE_MODIFIER_MODE_ZH = {
+    "Set": "固定为",
+    "Multiply": "乘以",
+    "Add": "增加",
+}
+
+
+def localized_fishing_time(value: object) -> str | None:
+    """官方 ``600 1900`` 或分时段 ``600 1100 1800 2600`` → 玩家时间文案。"""
+    raw = text_value(value)
+    if not raw:
+        return None
+    parts = raw.split()
+    if len(parts) >= 2 and len(parts) % 2 == 0 and all(part.isdigit() for part in parts):
+        times = [int(part) for part in parts]
+        if all(0 <= clock <= 2600 for clock in times):
+            sessions: list[str] = []
+            for index in range(0, len(times), 2):
+                start, end = times[index], times[index + 1]
+                start_text = f"{start // 100}:{start % 100:02d}"
+                if end > 2400:
+                    end_text = f"次日 {end // 100 - 24}:{end % 100:02d}"
+                else:
+                    end_text = f"{end // 100}:{end % 100:02d}"
+                sessions.append(f"{start_text}–{end_text}")
+            return "、".join(sessions)
+    return raw
+
+
+def unlock_label(condition: str, by_id: dict[str, NormalizedEntity]) -> str | None:
+    """制作配方的官方解锁条件 → 中文玩家文案（CraftingRecipe 语法）。"""
+    tokens = condition.split()
+    if not tokens:
+        return None
+    head = tokens[0].casefold()
+    if head == "default":
+        return "默认解锁"
+    if head == "s" and len(tokens) >= 3:
+        skill = SKILL_ZH.get(tokens[1].casefold(), tokens[1])
+        try:
+            level = int(tokens[2])
+        except ValueError:
+            return None
+        return f"{skill}等级 {level}"
+    if head in SKILL_ZH and len(tokens) >= 2:
+        try:
+            level = int(tokens[1])
+        except ValueError:
+            return None
+        return f"{SKILL_ZH[head]}等级 {level}"
+    if head == "f" and len(tokens) >= 3:
+        name = tokens[1]
+        npc = by_id.get(f"villager:{name}")
+        name_zh = npc.name_zh if npc is not None else name
+        try:
+            hearts = int(tokens[2])
+        except ValueError:
+            return None
+        return f"与{name_zh}好感度达到 {hearts}"
+    if head == "l" and len(tokens) >= 2:
+        try:
+            level = int(tokens[1])
+        except ValueError:
+            return None
+        if level <= 0:
+            return "默认解锁"
+        return f"玩家等级达到 {level}"
+    return None
+
+
+def tool_kind_label(entity: NormalizedEntity) -> str | None:
+    name = (entity.game_id or "").casefold()
+    if name in {"bamboopole", "fiberglassrod", "iridiumrod", "advancediridiumrod"}:
+        return "鱼竿"
+    if name.endswith("scythe"):
+        return "镰刀"
+    base = name
+    for prefix in TOOL_LEVEL_PREFIXES:
+        if base.startswith(prefix):
+            base = base[len(prefix):]
+            break
+    return TOOL_BASE_KIND_ZH.get(base)
+
+
+def tool_level_label(entity: NormalizedEntity) -> str | None:
+    attributes = structured_attributes(entity)
+    level = attributes.get("UpgradeLevel")
+    if type(level) is not int:
+        return None
+    name = (entity.game_id or "").casefold()
+    if name in ROD_LEVEL_ZH:
+        return ROD_LEVEL_ZH.get(level)
+    base = name
+    for prefix in TOOL_LEVEL_PREFIXES:
+        if base.startswith(prefix):
+            base = base[len(prefix):]
+            break
+    if base.endswith("scythe") or base in {"milkpail", "shears"}:
+        return None
+    return TOOL_LEVEL_ZH.get(level)
+
+
+def shop_location_zh(shop_id: str) -> str | None:
+    if shop_id.startswith("DesertFestival_"):
+        return "沙漠（沙漠节期间）"
+    if shop_id.startswith("Festival_NightMarket_"):
+        return "海滩（夜市期间）"
+    if shop_id.startswith("Festival_"):
+        return "鹈鹕镇（节日期间）"
+    return SHOP_LOCATION_ZH.get(shop_id)
 
 # The builder does not evaluate GameStateQuery; it preserves every supported
 # predicate as a typed conditional term so the package can accurately state
@@ -51,6 +585,7 @@ GAME_STATE_QUERY_LABELS = {
     "DAYS_PLAYED": "已游玩天数",
     "IS_COMMUNITY_CENTER_COMPLETE": "社区中心完成状态",
     "IS_FESTIVAL_DAY": "节日状态",
+    "IS_JOJA_MART_COMPLETE": "Joja 超市完成状态",
     "IS_MULTIPLAYER": "多人模式",
     "IS_PASSIVE_FESTIVAL_OPEN": "被动节日开放状态",
     "ITEM_CONTEXT_TAG": "输入物品标签",
@@ -61,13 +596,16 @@ GAME_STATE_QUERY_LABELS = {
     "PLAYER_BASE_FARMING_LEVEL": "玩家基础耕种等级",
     "PLAYER_BASE_FISHING_LEVEL": "玩家基础钓鱼等级",
     "PLAYER_FARMHOUSE_UPGRADE": "农舍升级等级",
+    "PLAYER_HAS_ACHIEVEMENT": "玩家成就",
+    "PLAYER_HAS_ALL_ACHIEVEMENTS": "玩家全部成就",
     "PLAYER_HAS_CONVERSATION_TOPIC": "玩家对话主题",
     "PLAYER_HAS_CRAFTING_RECIPE": "玩家制作配方",
     "PLAYER_HAS_ITEM": "玩家持有物品",
     "PLAYER_HAS_MAIL": "玩家邮件状态",
     "PLAYER_HAS_SEEN_EVENT": "玩家已观看事件",
+    "PLAYER_HAS_TOWN_KEY": "小镇钥匙",
     "PLAYER_HEARTS": "玩家好感度",
-    "PLAYER_NPC_RELATIONSHIP": "玩家与 NPC 关系",
+    "PLAYER_NPC_RELATIONSHIP": "玩家与村民关系",
     "PLAYER_SPECIAL_ORDER_RULE_ACTIVE": "特别订单规则状态",
     "PLAYER_STAT": "玩家统计值",
     "RANDOM": "随机概率",
@@ -87,6 +625,7 @@ GAME_STATE_QUERY_ARGUMENT_COUNTS = {
     "DAYS_PLAYED": {1},
     "IS_COMMUNITY_CENTER_COMPLETE": {0},
     "IS_FESTIVAL_DAY": {0},
+    "IS_JOJA_MART_COMPLETE": {0},
     "IS_MULTIPLAYER": {0},
     "IS_PASSIVE_FESTIVAL_OPEN": {1},
     "ITEM_CONTEXT_TAG": {2},
@@ -97,11 +636,14 @@ GAME_STATE_QUERY_ARGUMENT_COUNTS = {
     "PLAYER_BASE_FARMING_LEVEL": {2},
     "PLAYER_BASE_FISHING_LEVEL": {2},
     "PLAYER_FARMHOUSE_UPGRADE": {2},
+    "PLAYER_HAS_ACHIEVEMENT": {2},
+    "PLAYER_HAS_ALL_ACHIEVEMENTS": {1},
     "PLAYER_HAS_CONVERSATION_TOPIC": {2},
     "PLAYER_HAS_CRAFTING_RECIPE": {2, 3},
     "PLAYER_HAS_ITEM": {2},
     "PLAYER_HAS_MAIL": {2, 3},
     "PLAYER_HAS_SEEN_EVENT": {2},
+    "PLAYER_HAS_TOWN_KEY": {1},
     "PLAYER_HEARTS": {3},
     "PLAYER_NPC_RELATIONSHIP": {3, 4, 5},
     "PLAYER_SPECIAL_ORDER_RULE_ACTIVE": {2},
@@ -122,6 +664,7 @@ GAME_STATE_QUERY_MIN_ARGUMENTS = {
     "DAYS_PLAYED": 1,
     "IS_COMMUNITY_CENTER_COMPLETE": 0,
     "IS_FESTIVAL_DAY": 0,
+    "IS_JOJA_MART_COMPLETE": 0,
     "IS_MULTIPLAYER": 0,
     "IS_PASSIVE_FESTIVAL_OPEN": 1,
     "ITEM_CONTEXT_TAG": 2,
@@ -132,11 +675,14 @@ GAME_STATE_QUERY_MIN_ARGUMENTS = {
     "PLAYER_BASE_FARMING_LEVEL": 2,
     "PLAYER_BASE_FISHING_LEVEL": 2,
     "PLAYER_FARMHOUSE_UPGRADE": 2,
+    "PLAYER_HAS_ACHIEVEMENT": 2,
+    "PLAYER_HAS_ALL_ACHIEVEMENTS": 1,
     "PLAYER_HAS_CONVERSATION_TOPIC": 2,
     "PLAYER_HAS_CRAFTING_RECIPE": 2,
     "PLAYER_HAS_ITEM": 2,
     "PLAYER_HAS_MAIL": 2,
     "PLAYER_HAS_SEEN_EVENT": 2,
+    "PLAYER_HAS_TOWN_KEY": 1,
     "PLAYER_HEARTS": 3,
     "PLAYER_NPC_RELATIONSHIP": 3,
     "PLAYER_SPECIAL_ORDER_RULE_ACTIVE": 2,
@@ -601,28 +1147,96 @@ def build_schema5_package(
             locators_by_entity,
             official_release_binding,
         )
+        add_shop_projections(
+            package,
+            entities,
+            support,
+            source_documents,
+            source_locators,
+            game_version,
+        )
+        add_big_craftable_purpose_projections(
+            package,
+            entities,
+            support,
+            source_documents,
+            source_locators,
+            game_version,
+        )
     if support_entities:
         add_villager_support_projections(package, support_entities, by_id, game_version)
     project_card_actions(package)
     return package
 
 
+def distinct_text_items(items: list[Schema5FactItem]) -> list[str]:
+    """Order-preserving distinct non-empty item text values."""
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        value = item.text_value
+        if value and value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
+
+
 def project_card_actions(package: Schema5Package) -> None:
-    """Derive the two list-level action answers from typed fact rows."""
+    """Derive the two list-level action answers from typed fact rows.
+
+    Slot priority follows each category contract so the more important
+    summary always lands on the first line (决策 04/10)。
+    """
     slots_by_entity: dict[str, list[Schema5FactSlot]] = defaultdict(list)
     for slot in package.fact_slots:
         slots_by_entity[slot.entity_id].append(slot)
     items_by_slot: dict[str, list[Schema5FactItem]] = defaultdict(list)
     for item in package.fact_items:
         items_by_slot[item.slot_id].append(item)
+    entity_types = {entity.id: entity.entity_type for entity in package.entities}
+    entity_names = {entity.id: entity.name_zh for entity in package.entities}
+    priority_by_type = {
+        "crop": ("seasons", "first_harvest_days", "seed_purchase_price", "sell_price"),
+        "villager": ("birthday", "residence_region"),
+        "fish": ("fishing_locations", "seasons"),
+        "shop": ("location", "opening_hours"),
+        "tool": ("tool_kind", "tool_level", "upgrade_price"),
+        "big_craftable": ("primary_output", "unlock", "upgrade_price"),
+        "monster": ("locations", "drops"),
+        "weapon": ("weapon_type", "damage_min"),
+        "object": ("sell_price", "used_in", "machine_uses"),
+        "mineral": ("sell_price", "used_in", "machine_uses"),
+        "ring": ("sell_price", "purchase_price"),
+        "furniture": ("purchase_price", "purchase_exchange_item_id"),
+        "footwear": ("defense", "purchase_price"),
+        "cooking_recipe": ("crafting_material_id",),
+        "crafting_recipe": ("crafting_material_id",),
+    }
     updated = []
     for card in package.entity_cards:
+        entity_type = entity_types.get(card.entity_id, "")
+        slots = sorted(slots_by_entity.get(card.entity_id, []), key=lambda item: item.slot_key)
+        priority = priority_by_type.get(entity_type, ())
+        ordered = sorted(slots, key=lambda slot: (
+            priority.index(slot.slot_key) if slot.slot_key in priority else len(priority),
+            slot.slot_key,
+        ))
         actions: list[str] = []
-        for slot in sorted(slots_by_entity.get(card.entity_id, []), key=lambda item: item.slot_key):
+        for slot in ordered:
             if slot.status not in {"fixed", "conditional", "dynamic_rule"}:
                 continue
             if slot.slot_key in {"sell_price", "purchase_price", "seed_purchase_price"}:
                 value = slot.integer_value
+                if value is None:
+                    # 支持槽的价格放在事实项上（商店报价投影）。
+                    value = next(
+                        (
+                            item.integer_value
+                            for item in items_by_slot.get(slot.id, [])
+                            if item.integer_value is not None
+                        ),
+                        None,
+                    )
                 if value is not None:
                     label = {
                         "sell_price": "售价",
@@ -630,16 +1244,122 @@ def project_card_actions(package: Schema5Package) -> None:
                         "seed_purchase_price": "种子价",
                     }[slot.slot_key]
                     actions.append(f"{label}：{value}")
+                elif slot.status == "dynamic_rule":
+                    # 动态报价（目录/基础价规则）以规则文案作为卡片答案。
+                    rule_slot = next(
+                        (
+                            candidate
+                            for candidate in slots
+                            if candidate.slot_key
+                            in {"purchase_price_rule", "seed_purchase_price_rule"}
+                        ),
+                        None,
+                    )
+                    rule_text = None
+                    if rule_slot is not None:
+                        rule_text = next(
+                            (
+                                item.text_value
+                                for item in items_by_slot.get(rule_slot.id, [])
+                                if item.text_value
+                            ),
+                            None,
+                        )
+                    if rule_text:
+                        actions.append(f"购买：{rule_text}")
             elif slot.slot_key == "seasons" and slot.text_value:
                 actions.append(f"季节：{slot.text_value}")
-            elif slot.slot_key == "fishing_locations":
+            elif slot.slot_key in {"fishing_locations", "locations"}:
+                values = distinct_text_items(items_by_slot.get(slot.id, []))
+                if values:
+                    actions.append(f"地点：{'、'.join(values[:3])}")
+            elif slot.slot_key == "drops":
+                values = distinct_text_items(items_by_slot.get(slot.id, []))
+                names: list[str] = []
+                seen_names: set[str] = set()
+                for value in values:
+                    name = entity_names.get(value)
+                    if name and name not in seen_names:
+                        seen_names.add(name)
+                        names.append(name)
+                if names:
+                    actions.append(f"掉落：{'、'.join(names[:3])}")
+            elif slot.slot_key in {"used_in", "machine_uses", "crafting_material_id"}:
+                values = distinct_text_items(items_by_slot.get(slot.id, []))
+                names: list[str] = []
+                seen_names: set[str] = set()
+                for value in values:
+                    name = entity_names.get(value)
+                    if name is None:
+                        # 类别材料（任意鱼类）等中文文案直接展示；跳过未解析引用。
+                        if ":" in value or value.startswith("-"):
+                            continue
+                        name = value
+                    if name not in seen_names:
+                        seen_names.add(name)
+                        names.append(name)
+                if names:
+                    label = {
+                        "crafting_material_id": "材料",
+                        "used_in": "用途",
+                        "machine_uses": "加工",
+                    }[slot.slot_key]
+                    actions.append(f"{label}：{'、'.join(names[:3])}")
+            elif slot.slot_key == "birthday" and slot.text_value:
+                actions.append(f"生日：{slot.text_value}")
+            elif slot.slot_key == "residence_region" and slot.text_value:
+                actions.append(f"常住：{slot.text_value}")
+            elif slot.slot_key == "first_harvest_days" and slot.integer_value is not None:
+                actions.append(f"成熟：{slot.integer_value} 天")
+            elif slot.slot_key == "damage_min" and slot.integer_value is not None:
+                damage_max = next(
+                    (
+                        candidate.integer_value
+                        for candidate in slots
+                        if candidate.slot_key == "damage_max"
+                        and candidate.integer_value is not None
+                    ),
+                    None,
+                )
+                if damage_max is not None:
+                    actions.append(f"伤害：{slot.integer_value}–{damage_max}")
+                else:
+                    actions.append(f"伤害：{slot.integer_value}")
+            elif slot.slot_key == "defense" and slot.integer_value is not None:
+                actions.append(f"防御：{slot.integer_value}")
+            elif slot.slot_key in {"location", "opening_hours", "owner"}:
                 values = [
                     item.text_value
                     for item in items_by_slot.get(slot.id, [])
                     if item.text_value
                 ]
                 if values:
-                    actions.append(f"地点：{'、'.join(values[:3])}")
+                    label = {
+                        "location": "地点",
+                        "opening_hours": "营业",
+                        "owner": "店主",
+                    }[slot.slot_key]
+                    actions.append(f"{label}：{values[0]}")
+            elif slot.slot_key == "upgrade_price" and slot.integer_value is not None:
+                actions.append(f"升级：{slot.integer_value} 金币")
+            elif slot.slot_key in {"tool_kind", "tool_level", "primary_output", "unlock", "weapon_type"}:
+                label = {
+                    "tool_kind": "类型",
+                    "tool_level": "档位",
+                    "primary_output": "产物",
+                    "unlock": "解锁",
+                    "weapon_type": "类型",
+                }[slot.slot_key]
+                value = slot.text_value or next(
+                    (
+                        item.text_value
+                        for item in items_by_slot.get(slot.id, [])
+                        if item.text_value
+                    ),
+                    None,
+                )
+                if value:
+                    actions.append(f"{label}：{value}")
             if len(actions) == 2:
                 break
         updated.append(
@@ -755,7 +1475,7 @@ def add_villager_support_projections(
         elif support_entity.entity_type == "villager_gift":
             slot_id = f"fact:{villager_id}:gift_preferences"
             for item_index, (preference, item) in enumerate(
-                gift_fact_items(attributes, by_id)
+                gift_fact_items(attributes, by_id, package.gift_reference_diagnostics)
             ):
                 ordinal = ordinals_by_slot[slot_id]
                 add_support_fact_item(
@@ -788,27 +1508,18 @@ def schedule_fact_text(attributes: dict[str, Any]) -> str | None:
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
-            entry_time = entry.get("time")
-            entry_location = text_value(entry.get("location"))
-            route = entry.get("route")
-            if isinstance(entry_time, int) and entry_location:
-                route_text = (
-                    " ".join(str(item) for item in route) if isinstance(route, list) else ""
-                )
-                rendered_entries.append(
-                    f"{entry_time}：{entry_location}{(' ' + route_text) if route_text else ''}"
-                )
-            else:
-                rule = text_value(entry.get("rule"))
-                if rule:
-                    rendered_entries.append(f"规则：{rule}")
+            rendered = render_schedule_entry(entry)
+            if rendered:
+                rendered_entries.append(rendered)
         if rendered_entries:
             schedule = "；".join(rendered_entries)
     parts = [
         part
         for part in (
-            f"时间：{time}" if time else None,
-            f"地点：{location}" if location else None,
+            f"时间：{localized_schedule_time(time)}" if time else None,
+            f"地点：{SCHEDULE_LOCATION_ZH.get(location, localized_schedule_location(location))}"
+            if location
+            else None,
         )
         if part
     ]
@@ -817,8 +1528,138 @@ def schedule_fact_text(attributes: dict[str, Any]) -> str | None:
     return "；".join(parts) or None
 
 
+def render_schedule_entry(entry: dict[str, Any]) -> str | None:
+    """把单条官方日程渲染为中文玩家文案，丢弃坐标/动画等内部 token。"""
+    entry_time = entry.get("time")
+    entry_location = text_value(entry.get("location"))
+    if isinstance(entry_time, int) and entry_location:
+        location_zh = localized_schedule_location(entry_location)
+        if location_zh is None:
+            return None
+        return f"{localized_schedule_time(str(entry_time))} {location_zh}"
+    rule = text_value(entry.get("rule"))
+    if rule:
+        return render_schedule_rule(rule)
+    return None
+
+
+def render_schedule_rule(rule: str) -> str | None:
+    tokens = rule.split()
+    if not tokens:
+        return None
+    head = tokens[0]
+    if head == "GOTO":
+        target = tokens[1] if len(tokens) > 1 else ""
+        return f"与{localized_schedule_key(target)}相同"
+    if head == "NOT" and len(tokens) >= 4 and tokens[1] == "friendship":
+        name = localized_schedule_name(tokens[2])
+        try:
+            level = int(tokens[3])
+        except ValueError:
+            return "受好感度条件限制"
+        return f"需与{name}好感度低于{level}"
+    if head == "MAIL":
+        return "受邮件事件条件限制"
+    if head.startswith("a") and head[1:].isdigit():
+        # 动画时刻（a1000 等）不承载玩家信息。
+        return None
+    if head in SCHEDULE_LOCATION_ZH:
+        location_zh = SCHEDULE_LOCATION_ZH[head]
+        return f"留在{location_zh}"
+    return None
+
+
+def localized_schedule_time(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    try:
+        minutes = int(raw)
+    except ValueError:
+        hours, separator, minutes_part = raw.partition(":")
+        if separator and hours.isdigit() and minutes_part.isdigit():
+            try:
+                minutes = int(hours) * 100 + int(minutes_part)
+            except ValueError:
+                return None
+        else:
+            return None
+    if not 0 <= minutes <= 2600:
+        return None
+    return f"{minutes // 100}:{minutes % 100:02d}"
+
+
+def localized_schedule_location(location: str) -> str | None:
+    return SCHEDULE_LOCATION_ZH.get(location)
+
+
+def localized_schedule_key(key: str) -> str:
+    if key in ("NO_SCHEDULE", "NO_SCHEDULE_OWN"):
+        return "当日无固定日程"
+    if key in SCHEDULE_DAY_ZH:
+        return SCHEDULE_DAY_ZH[key]
+    if key in SCHEDULE_SEASON_ZH:
+        return SCHEDULE_SEASON_ZH[key]
+    if key == "rain":
+        return "雨天"
+    if key == "season":
+        return "当季"
+    for day, day_zh in SCHEDULE_DAY_ZH.items():
+        if key.startswith(day):
+            suffix = key.removeprefix(day)
+            if suffix in ("", "_normal"):
+                return day_zh + ("（常规）" if suffix else "")
+            if suffix.startswith("_") and suffix[1:].isdigit():
+                return f"{day_zh}（每月{suffix[1:]}日）"
+            return f"{day_zh}（{suffix.lstrip('_')}）"
+    for season, season_zh in SCHEDULE_SEASON_ZH.items():
+        if key.startswith(season):
+            suffix = key.removeprefix(season)
+            if not suffix:
+                return season_zh
+            if suffix.startswith("_") and suffix[1:].isdigit():
+                return f"{season_zh}（每月{suffix[1:]}日）"
+            if suffix == "_noBridge":
+                return f"{season_zh}（桥修复前）"
+            return f"{season_zh}（{suffix.lstrip('_')}）"
+    if key.startswith("marriage_"):
+        inner = key.removeprefix("marriage_")
+        return f"婚后（{localized_schedule_key(inner)}）"
+    if key.isdigit():
+        return f"每月{key}日"
+    # 未识别日程键不进入玩家文案；由真实候选门禁保证不出现。
+    return "其他日程"
+
+
+def localized_schedule_name(name: str) -> str:
+    return {
+        "Sebastian": "塞巴斯蒂安",
+        "Haley": "海莉",
+        "Leah": "莉亚",
+        "Alex": "亚历克斯",
+        "Sam": "山姆",
+        "Penny": "潘妮",
+        "Abigail": "阿比盖尔",
+        "Elliott": "艾利欧特",
+        "Emily": "艾米丽",
+        "Harvey": "哈维",
+        "Jodi": "乔迪",
+        "Kent": "肯特",
+        "Lewis": "刘易斯",
+        "Linus": "莱纳斯",
+        "Maru": "玛鲁",
+        "Pierre": "皮埃尔",
+        "Robin": "罗宾",
+        "Shane": "谢恩",
+        "Willy": "威利",
+        "Wizard": "法师",
+        "Krobus": "科罗布斯",
+    }.get(name, name)
+
+
 def gift_fact_items(
-    attributes: dict[str, Any], by_id: dict[str, NormalizedEntity]
+    attributes: dict[str, Any],
+    by_id: dict[str, NormalizedEntity],
+    diagnostics: list[dict[str, object]] | None = None,
 ) -> list[tuple[str, str]]:
     tastes = attributes.get("GiftTastes")
     if isinstance(tastes, list):
@@ -830,7 +1671,7 @@ def gift_fact_items(
             values = taste.get("items")
             values = values if isinstance(values, list) else [values]
             for value in values:
-                rendered = render_gift_reference(value, by_id)
+                rendered = render_gift_reference(value, by_id, diagnostics)
                 if rendered is not None:
                     result.append((preference, rendered))
         return result
@@ -839,13 +1680,21 @@ def gift_fact_items(
     return [
         ("unknown", rendered)
         for value in values
-        if (rendered := render_gift_reference(value, by_id)) is not None
+        if (rendered := render_gift_reference(value, by_id, diagnostics)) is not None
     ]
 
 
 def render_gift_reference(
-    value: object, by_id: dict[str, NormalizedEntity]
+    value: object,
+    by_id: dict[str, NormalizedEntity],
+    diagnostics: list[dict[str, object]] | None = None,
 ) -> str | None:
+    """把礼物 token 渲染为类型化实体引用或中文类别短语。
+
+    实体引用（``object:72``、``trinket:FrogEgg``）是 schema 5 跨仓库契约，
+    由 App 解析为可点击中文实体；类别码与上下文标签渲染为中文短语；
+    无法解析的 token 不进入玩家事实，只记入构建诊断。
+    """
     reference = stable_entity_reference(value, by_id)
     if reference is not None:
         return reference
@@ -853,10 +1702,31 @@ def render_gift_reference(
     if raw is None:
         return None
     if raw.startswith("category_"):
-        return f"类别引用：{raw.removeprefix('category_')}"
-    if raw.startswith("-") or raw.isdigit():
-        return f"官方分类引用：{raw}"
-    return f"未解析礼物引用：{raw}"
+        tag = raw.removeprefix("category_")
+        label = GIFT_CONTEXT_TAG_ZH.get(raw) or GIFT_CONTEXT_TAG_ZH.get(tag)
+        if label is not None:
+            return label
+        note_unresolved_gift(diagnostics, raw, "未识别上下文标签")
+        return None
+    if raw.startswith("-") and raw[1:].isdigit():
+        label = GIFT_CATEGORY_ZH.get(int(raw))
+        if label is not None:
+            return label
+        note_unresolved_gift(diagnostics, raw, "未识别官方类别码")
+        return None
+    label = GIFT_CONTEXT_TAG_ZH.get(raw)
+    if label is not None:
+        return label
+    note_unresolved_gift(diagnostics, raw, "无法解析为实体或已知类别")
+    return None
+
+
+def note_unresolved_gift(
+    diagnostics: list[dict[str, object]] | None, token: str, reason: str
+) -> None:
+    if diagnostics is None:
+        return
+    diagnostics.append({"token": token, "reason": reason})
 
 
 def _fixture_attributes(entity: NormalizedEntity) -> dict[str, Any]:
@@ -968,7 +1838,7 @@ def add_typed_support_projections(
                 transformation_rule="official-locations-to-player-facts-v1",
             )
             item_id = f"fact-item:{fish_id}:{slot_key}:{item_key}"
-            condition, condition_terms = fish_condition(reference, item_id)
+            condition, condition_terms = fish_condition(reference, item_id, by_id)
             condition_id = condition.id if condition is not None else None
             if condition is not None:
                 package.condition_sets.append(condition)
@@ -978,7 +1848,7 @@ def add_typed_support_projections(
                 slot_id=slot_id,
                 ordinal=ordinal,
                 value_type="text",
-                text_value=str(reference["locationId"]),
+                text_value=FISHING_LOCATION_ZH.get(str(reference["locationId"])),
                 scope_id=f"fishing:{fish_id}:{item_key}",
                 condition_set_id=condition_id,
             )
@@ -1023,13 +1893,14 @@ def add_typed_support_projections(
                 package,
                 f"condition:monster-location:{item_key}",
                 reference,
+                by_id,
             )
             item = add_support_fact_item(
                 package,
                 monster_id,
                 "locations",
                 "text",
-                text_value=str(reference["locationId"]),
+                text_value=FISHING_LOCATION_ZH.get(str(reference["locationId"])),
                 scope_id=f"monster-location:{stable_part(monster_id)}:{item_key}",
                 condition_set_id=condition_id,
                 ordinal=ordinal,
@@ -1307,7 +2178,9 @@ def add_purchase_offer_projections(
                 record_key=str(offer_key),
             )
             source_locators[locator.id] = locator
-            condition, condition_terms = shop_condition(offer, entity.id, slot_prefix, offer_key)
+            condition, condition_terms = shop_condition(
+                offer, entity.id, slot_prefix, offer_key, by_id
+            )
             condition_id = condition.id if condition is not None else None
             if condition is not None:
                 package.condition_sets.append(condition)
@@ -1416,6 +2289,327 @@ def add_purchase_offer_projections(
                 )
 
 
+def add_shop_projections(
+    package: Schema5Package,
+    entities: list[NormalizedEntity],
+    support: OfficialSupportData,
+    source_documents: dict[str, Schema5SourceDocument],
+    source_locators: dict[str, Schema5SourceLocator],
+    game_version: str,
+) -> None:
+    """商店玩家事实：地点、营业规则、店主与商品报价。
+
+    地点来自人工复核映射（官方店主日程为证据）；营业时间按决策 02 属
+    C 类（随店主日程变化），只发布规则语句，不假装固定时段；商品报价
+    复用商店报价解析，条件紧邻报价。
+    """
+    shops = {entity.id: entity for entity in entities if entity.entity_type == "shop"}
+    if not shops or not support.shops:
+        return
+    # 上游投影（鱼类地点、报价等）各自把新增定位写回 package；这里从当前
+    # package 状态重建字典，避免用构建入口的过期局部字典覆盖它们。
+    source_documents = {item.id: item for item in package.source_documents}
+    source_locators = {item.id: item for item in package.source_locators}
+    by_id = {entity.id: entity for entity in entities}
+    resolver = ItemReferenceResolver.create(by_id)
+    source = source_documents.setdefault(
+        "source:official-support:shop-profiles",
+        Schema5SourceDocument(
+            id="source:official-support:shop-profiles",
+            source_kind="official_derived",
+            title="Data/Shops.json + Characters/schedules",
+            game_version=game_version,
+        ),
+    )
+    ordinals_by_slot: dict[str, int] = defaultdict(int)
+    for entity_id, shop_entity in sorted(shops.items()):
+        shop_id = shop_entity.game_id or entity_id.split(":", 1)[1]
+        shop = support.shops.get(shop_id)
+        if not isinstance(shop, dict):
+            continue
+        locator_id = f"locator:official-support:shop-profiles:{stable_part(entity_id)}"
+        source_locators.setdefault(
+            locator_id,
+            Schema5SourceLocator(
+                id=locator_id,
+                source_document_id=source.id,
+                source_file="Data/Shops.json",
+                record_key=shop_id,
+            ),
+        )
+        location_zh = shop_location_zh(shop_id)
+        if location_zh is not None:
+            slot_key = f"fact:{entity_id}:location"
+            add_support_fact_item(
+                package, entity_id, "location", "text", text_value=location_zh,
+                scope_id=f"shop:{stable_part(entity_id)}", condition_set_id=None,
+                ordinal=ordinals_by_slot[slot_key], locator_id=locator_id,
+                transformation_rule="official-shop-location-map-v1",
+            )
+            ordinals_by_slot[slot_key] += 1
+        owners = [owner for owner in shop.get("Owners") or [] if isinstance(owner, dict)]
+        owner_name = next(
+            (
+                by_id[f"villager:{name}"].name_zh
+                for owner in owners
+                if (name := text_value(owner.get("Name")))
+                and f"villager:{name}" in by_id
+            ),
+            None,
+        )
+        if owner_name is not None:
+            slot_key = f"fact:{entity_id}:owner"
+            add_support_fact_item(
+                package, entity_id, "owner", "text", text_value=owner_name,
+                scope_id=f"shop:{stable_part(entity_id)}", condition_set_id=None,
+                ordinal=ordinals_by_slot[slot_key], locator_id=locator_id,
+                transformation_rule="official-shop-owner-v1",
+            )
+            ordinals_by_slot[slot_key] += 1
+        hours_condition_id: str | None = None
+        if shop_id.startswith(("Festival_", "DesertFestival_")):
+            hours_text = "仅节日当天开放"
+            hours_status = "conditional"
+            hours_condition_id = f"condition:shop:{stable_part(entity_id)}:hours"
+            package.condition_sets.append(
+                Schema5ConditionSet(
+                    id=hours_condition_id,
+                    completeness="complete",
+                    player_summary="仅对应节日当天开放",
+                )
+            )
+        elif shop_id in SHOP_CATALOGUE_IDS:
+            ensure_support_fact_slot(
+                package,
+                entity_id=entity_id,
+                slot_key="opening_hours",
+                value_type="text",
+                locator_id=locator_id,
+                transformation_rule="official-shop-location-map-v1",
+                status="not_applicable",
+            )
+            hours_text, hours_status = None, "not_applicable"
+        else:
+            hours_text = "随店主日程变化"
+            hours_status = "dynamic_rule"
+            hours_condition_id = f"condition:shop:{stable_part(entity_id)}:hours"
+            package.condition_sets.append(
+                Schema5ConditionSet(
+                    id=hours_condition_id,
+                    completeness="complete",
+                    player_summary="受星期、天气与节日影响",
+                )
+            )
+        if hours_text is not None:
+            slot_key = f"fact:{entity_id}:opening_hours"
+            add_support_fact_item(
+                package, entity_id, "opening_hours", "text", text_value=hours_text,
+                scope_id=f"shop:{stable_part(entity_id)}",
+                condition_set_id=None,
+                fact_condition_set_id=hours_condition_id,
+                ordinal=ordinals_by_slot[slot_key], locator_id=locator_id,
+                transformation_rule="official-shop-hours-rule-v1",
+                status=hours_status,
+            )
+            ordinals_by_slot[slot_key] += 1
+        offer_ordinal = 0
+        for item in dictionary_list(shop.get("Items")):
+            offer = shop_offer(shop_id, shop, item)
+            offer_key = shop_offer_key(offer)
+            scope_id = f"offer:{stable_part(offer_key)}"
+            offer_locator_id = f"locator:official-support:shop-offers:{stable_part(offer_key)}"
+            source_locators.setdefault(
+                offer_locator_id,
+                Schema5SourceLocator(
+                    id=offer_locator_id,
+                    source_document_id=source.id,
+                    source_file="Data/Shops.json",
+                    json_path=f"$.{shop_id}.Items[*]",
+                    record_key=offer_key,
+                ),
+            )
+            condition, terms = shop_condition(offer, entity_id, "shop_offer", offer_key, by_id)
+            condition_id = condition.id if condition is not None else None
+            if condition is not None and not any(
+                existing.id == condition.id for existing in package.condition_sets
+            ):
+                package.condition_sets.append(condition)
+                package.condition_terms.extend(terms)
+            primary_refs = resolver.resolve(item.get("ItemId"))
+            item_ref = next(iter(sorted(primary_refs)), None) if primary_refs else None
+            if item_ref is None:
+                # 纯随机商品报价不在此次波次展开；随机语义由 R4 后续处理。
+                package.shop_price_diagnostics.append(
+                    {"shopId": shop_id, "offerKey": offer_key, "kind": "random-only-skipped"}
+                )
+                continue
+            slot_key = f"fact:{entity_id}:shop_offer_item"
+            add_support_fact_item(
+                package, entity_id, "shop_offer_item", "text", text_value=item_ref,
+                scope_id=scope_id, condition_set_id=condition_id, ordinal=offer_ordinal,
+                locator_id=offer_locator_id,
+                transformation_rule="official-shops-to-player-facts-v1",
+            )
+            ordinals_by_slot[slot_key] += 1
+            price = resolve_shop_offer_price(offer, by_id.get(item_ref) or shop_entity, by_id)
+            currency = currency_label(offer.get("currency"))
+            if price["kind"] == "coin" and currency == "金币":
+                slot_key = f"fact:{entity_id}:shop_offer_price"
+                add_support_fact_item(
+                    package, entity_id, "shop_offer_price", "integer",
+                    integer_value=price["value"], scope_id=scope_id,
+                    condition_set_id=condition_id, ordinal=offer_ordinal,
+                    locator_id=offer_locator_id,
+                    transformation_rule="official-shop-builder-get-base-price-v1",
+                    input_claim_id=str(price.get("inputClaimId") or ""),
+                )
+                ordinals_by_slot[slot_key] += 1
+            elif price["kind"] == "currency_amount" and currency is not None:
+                slot_key = f"fact:{entity_id}:shop_offer_currency"
+                add_support_fact_item(
+                    package, entity_id, "shop_offer_currency", "text", text_value=currency,
+                    scope_id=scope_id, condition_set_id=condition_id, ordinal=offer_ordinal,
+                    locator_id=offer_locator_id,
+                    transformation_rule="official-shops-to-player-facts-v1",
+                )
+                ordinals_by_slot[slot_key] += 1
+                slot_key = f"fact:{entity_id}:shop_offer_currency_amount"
+                add_support_fact_item(
+                    package, entity_id, "shop_offer_currency_amount", "integer",
+                    integer_value=price["value"], scope_id=scope_id,
+                    condition_set_id=condition_id, ordinal=offer_ordinal,
+                    locator_id=offer_locator_id,
+                    transformation_rule="official-shop-builder-get-base-price-v1",
+                )
+                ordinals_by_slot[slot_key] += 1
+            elif (
+                price["kind"] in {"exchange_only", "coin"}
+                and offer.get("tradeItemId") is not None
+            ):
+                resolved_trade = resolver.resolve(offer.get("tradeItemId"))
+                if len(resolved_trade) == 1:
+                    slot_key = f"fact:{entity_id}:shop_offer_exchange_item_id"
+                    add_support_fact_item(
+                        package, entity_id, "shop_offer_exchange_item_id", "text",
+                        text_value=next(iter(resolved_trade)), scope_id=scope_id,
+                        condition_set_id=condition_id, ordinal=offer_ordinal,
+                        locator_id=offer_locator_id,
+                        transformation_rule="official-shops-to-player-facts-v1",
+                    )
+                    ordinals_by_slot[slot_key] += 1
+                    amount = offer.get("tradeItemAmount")
+                    if isinstance(amount, int) and not isinstance(amount, bool):
+                        slot_key = f"fact:{entity_id}:shop_offer_exchange_amount"
+                        add_support_fact_item(
+                            package, entity_id, "shop_offer_exchange_amount", "integer",
+                            integer_value=amount, scope_id=scope_id,
+                            condition_set_id=condition_id, ordinal=offer_ordinal,
+                            locator_id=offer_locator_id,
+                            transformation_rule="official-shops-to-player-facts-v1",
+                        )
+                        ordinals_by_slot[slot_key] += 1
+            elif price["kind"] == "dynamic":
+                slot_key = f"fact:{entity_id}:shop_offer_price_rule"
+                add_support_fact_item(
+                    package, entity_id, "shop_offer_price_rule", "text",
+                    text_value=PRICE_RULE_REASON_ZH.get(str(price["reason"]), "受游戏规则影响"),
+                    scope_id=scope_id, condition_set_id=condition_id, ordinal=offer_ordinal,
+                    locator_id=offer_locator_id,
+                    transformation_rule="official-shop-builder-dynamic-price-rule-v1",
+                    status="dynamic_rule",
+                )
+                ordinals_by_slot[slot_key] += 1
+            offer_ordinal += 1
+    package.source_documents = sorted(source_documents.values(), key=lambda item: item.id)
+    package.source_locators = sorted(source_locators.values(), key=lambda item: item.id)
+
+
+def machine_primary_output_zh(
+    machine: dict[str, object], by_id: dict[str, NormalizedEntity]
+) -> str | None:
+    for rule in dictionary_list(machine.get("OutputRules")):
+        for out in dictionary_list(rule.get("OutputItem")):
+            item_id = out.get("ItemId")
+            if not isinstance(item_id, str) or not item_id:
+                continue
+            if item_id.startswith("FLAVORED_ITEM "):
+                parts = item_id.split()
+                if len(parts) >= 2:
+                    return PRESERVE_OUTPUT_ZH.get(parts[1])
+                continue
+            reference = stable_entity_reference(item_id, by_id)
+            if reference is not None:
+                target = by_id.get(reference)
+                if target is not None and target.name_zh:
+                    return target.name_zh
+    return None
+
+
+def add_big_craftable_purpose_projections(
+    package: Schema5Package,
+    entities: list[NormalizedEntity],
+    support: OfficialSupportData,
+    source_documents: dict[str, Schema5SourceDocument],
+    source_locators: dict[str, Schema5SourceLocator],
+    game_version: str,
+) -> None:
+    """大型可制作物的「主要产物/用途」：机器数据或官方中文描述。"""
+    # 与 add_shop_projections 一致：从当前 package 重建字典，避免覆盖上游投影。
+    source_documents = {item.id: item for item in package.source_documents}
+    source_locators = {item.id: item for item in package.source_locators}
+    by_id = {entity.id: entity for entity in entities}
+    source = source_documents.setdefault(
+        "source:official-support:machine-outputs",
+        Schema5SourceDocument(
+            id="source:official-support:machine-outputs",
+            source_kind="official_derived",
+            title="Data/Machines.json",
+            game_version=game_version,
+        ),
+    )
+    for entity in entities:
+        if entity.entity_type != "big_craftable":
+            continue
+        machine = support.machines.get(f"(BC){entity.game_id}")
+        output_zh = (
+            machine_primary_output_zh(machine, by_id)
+            if isinstance(machine, dict)
+            else None
+        )
+        if output_zh is None and entity.description_zh and entity.translation_status != "missing":
+            output_zh = entity.description_zh.strip().split("。")[0][:40]
+        if not output_zh or not any("\u4e00" <= char <= "\u9fff" for char in output_zh):
+            continue
+        locator_id = f"locator:official-support:machine-outputs:{stable_part(entity.id)}"
+        source_locators.setdefault(
+            locator_id,
+            Schema5SourceLocator(
+                id=locator_id,
+                source_document_id=source.id,
+                source_file=(
+                    "Data/Machines.json"
+                    if isinstance(machine, dict)
+                    else entity.source_file
+                ),
+                record_key=entity.game_id or entity.id,
+            ),
+        )
+        add_support_fact_item(
+            package,
+            entity.id,
+            "primary_output",
+            "text",
+            text_value=output_zh,
+            scope_id=f"machine-output:{stable_part(entity.id)}",
+            condition_set_id=None,
+            ordinal=0,
+            locator_id=locator_id,
+            transformation_rule="official-machine-output-to-player-facts-v1",
+        )
+    package.source_documents = sorted(source_documents.values(), key=lambda item: item.id)
+    package.source_locators = sorted(source_locators.values(), key=lambda item: item.id)
+
+
 def add_weapon_acquisition_projections(
     package: Schema5Package,
     entities: list[NormalizedEntity],
@@ -1470,7 +2664,7 @@ def add_weapon_acquisition_projections(
                 ),
             )
             condition, terms = shop_condition(
-                offer, entity_id, "acquisition", offer_key
+                offer, entity_id, "acquisition", offer_key, by_id
             )
             condition_id = condition.id if condition is not None else None
             if condition is not None and not any(
@@ -2290,7 +3484,7 @@ def add_dynamic_price_rule(
         entity_id,
         f"{slot_prefix}_price_rule",
         "text",
-        text_value=reason,
+        text_value=PRICE_RULE_REASON_ZH.get(reason, reason),
         scope_id=scope_id,
         condition_set_id=condition_set_id,
         ordinal=ordinal,
@@ -2319,9 +3513,24 @@ def add_machine_and_usage_projections(
         game_version=game_version,
     )
     source_documents[machine_source.id] = machine_source
+    # 种子生产器的数据触发器（!seedmaker_banned）对非作物是通配噪声；
+    # 运行时规则（Object.OutputSeedMaker）只接受作物收获物（DLL 常量复核）。
+    crop_harvest_item_ids = {
+        f"object:{harvest_id}"
+        for entity in entities
+        if entity.entity_type == "crop"
+        for harvest_id in [text_value(structured_attributes(entity).get("HarvestItemId"))]
+        if harvest_id
+    }
     for entity_id, rows in sorted(references.machine_uses.items()):
+        # 戒指不会进入任何机器；`!seedmaker_banned` 通配触发器对戒指是数据级噪声。
+        if by_id.get(entity_id) is not None and by_id[entity_id].entity_type == "ring":
+            continue
         for ordinal, reference in enumerate(sorted(rows, key=machine_reference_key)):
             machine_id = reference.get("machineId")
+            if machine_id == "(BC)25" and entity_id not in crop_harvest_item_ids:
+                # 种子生产器只加工作物收获物；其余物品的该行是数据级通配噪声。
+                continue
             machine_entity_id = stable_entity_reference(machine_id, by_id)
             if machine_entity_id is None:
                 continue
@@ -2341,8 +3550,12 @@ def add_machine_and_usage_projections(
             source_locators[locator.id] = locator
             condition_id = opaque_rule_condition(
                 package,
-                f"condition:machine:{stable_part(entity_id)}:{stable_part(rule_id)}:{stable_part(trigger_id)}",
+                (
+                    f"condition:machine:{stable_part(entity_id)}:{stable_part(machine_id or 'machine')}:"
+                    f"{stable_part(rule_id)}:{stable_part(trigger_id)}"
+                ),
                 reference,
+                by_id,
             )
             scope_id = (
                 f"machine:{stable_part(machine_id or 'machine')}:{stable_part(rule_id)}:"
@@ -2495,6 +3708,7 @@ def game_state_query_terms(
     condition_id: str,
     value: str,
     ordinal: int,
+    by_id: dict[str, NormalizedEntity] | None = None,
 ) -> tuple[list[Schema5ConditionTerm], list[str], bool]:
     """Translate structurally valid GameStateQuery clauses without evaluating a save."""
     terms: list[Schema5ConditionTerm] = []
@@ -2531,7 +3745,10 @@ def game_state_query_terms(
         if predicate == "ANY":
             return [], [], False
         label = GAME_STATE_QUERY_LABELS[predicate]
-        summaries.append(f"不满足{label}：{display}" if negated else f"{label}：{display}")
+        display_text = game_state_query_display(predicate, arguments, by_id)
+        summaries.append(
+            f"不满足{label}：{display_text}" if negated else f"{label}：{display_text}"
+        )
         terms.append(
             Schema5ConditionTerm(
                 id=(
@@ -2555,10 +3772,185 @@ def game_state_query_tokens(value: str) -> list[str] | None:
     return tokens if all(token.strip() for token in tokens) else None
 
 
+def game_state_query_display(
+    predicate: str,
+    arguments: list[str],
+    by_id: dict[str, NormalizedEntity] | None = None,
+) -> str:
+    """把谓词参数渲染为中文玩家文案（原始 GameStateQuery 不进入普通页面）。"""
+    entity_index = by_id or {}
+    if predicate in {"SEASON", "LOCATION_SEASON"}:
+        seasons = arguments[1:] if predicate == "LOCATION_SEASON" else arguments
+        return " ".join(SEASON_ZH.get(argument.casefold(), argument) for argument in seasons)
+    if predicate == "DAY_OF_WEEK":
+        return " ".join(
+            SCHEDULE_DAY_ZH.get(argument[:3], argument) for argument in arguments
+        )
+    if predicate == "DAY_OF_MONTH":
+        return " ".join(
+            "偶数日" if argument.casefold() == "even"
+            else "奇数日" if argument.casefold() == "odd"
+            else f"{argument} 日"
+            for argument in arguments
+        )
+    if predicate == "TIME":
+        values = [int(argument) for argument in arguments if argument.isdigit()]
+        if len(values) == len(arguments) and values:
+            rendered = "–".join(f"{value // 100}:{value % 100:02d}" for value in values)
+            return rendered
+        return " ".join(arguments)
+    if predicate == "WEATHER":
+        weathers = [
+            argument
+            for argument in arguments
+            if argument.casefold()
+            not in {"here", "current", "target", "location", "host"}
+        ]
+        return "、".join(
+            WEATHER_VALUE_ZH.get(argument.casefold(), argument) for argument in weathers
+        )
+    if predicate == "ITEM_CONTEXT_TAG" and len(arguments) == 2:
+        # 第一个参数是查询上下文（Input/Target），玩家只关心标签本身。
+        return ITEM_TAG_ZH.get(arguments[1], arguments[1])
+    if predicate == "ITEM_EDIBILITY" and len(arguments) == 2:
+        return ITEM_EDIBILITY_ZH.get(arguments[1].casefold(), arguments[1])
+    if predicate == "RANDOM" and len(arguments) == 1:
+        try:
+            return f"{float(arguments[0]) * 100:g}%"
+        except ValueError:
+            return arguments[0]
+    if predicate == "MUSEUM_DONATIONS":
+        count = arguments[0]
+        types = "、".join(
+            MUSEUM_DONATION_TYPE_ZH.get(argument, argument) for argument in arguments[1:]
+        )
+        return f"{types} {count} 件"
+    if predicate == "IS_PASSIVE_FESTIVAL_OPEN":
+        return PASSIVE_FESTIVAL_ZH.get(arguments[0], arguments[0])
+    if predicate == "PLAYER_SPECIAL_ORDER_RULE_ACTIVE" and len(arguments) == 2:
+        return SPECIAL_ORDER_RULE_ZH.get(arguments[1], arguments[1])
+    if predicate == "PLAYER_BASE_FARMING_LEVEL" and len(arguments) == 2:
+        return f"{arguments[1]} 级"
+    if predicate == "PLAYER_BASE_FISHING_LEVEL" and len(arguments) == 2:
+        return f"{arguments[1]} 级"
+    if predicate == "PLAYER_FARMHOUSE_UPGRADE" and len(arguments) == 2:
+        return f"{arguments[1]} 级"
+    if predicate == "PLAYER_HAS_ACHIEVEMENT" and len(arguments) == 2:
+        achievement = entity_index.get(f"achievement:{arguments[1]}")
+        if achievement is not None and achievement.name_zh:
+            return achievement.name_zh
+        return f"成就编号 {arguments[1]}"
+    if predicate == "PLAYER_HAS_ALL_ACHIEVEMENTS":
+        return "全部成就"
+    if predicate == "PLAYER_HAS_TOWN_KEY":
+        return "已获得"
+    if predicate == "PLAYER_HAS_MAIL":
+        flag = arguments[-1].strip('"')
+        return MAIL_FLAG_ZH.get(flag, flag)
+    if predicate == "PLAYER_HAS_CONVERSATION_TOPIC":
+        topic = arguments[-1]
+        return CONVERSATION_TOPIC_ZH.get(topic, topic)
+    if predicate == "PLAYER_HAS_SEEN_EVENT":
+        return f"事件编号 {arguments[-1]}"
+    if predicate == "PLAYER_HEARTS" and len(arguments) == 3:
+        who = arguments[1]
+        who_zh = VILLAGER_DISPLAY_NAMES.get(who.casefold())
+        if who_zh is None:
+            who_zh = {"krobus": "科罗布斯", "dwarf": "矮人", "anydateable": "可婚配村民"}.get(
+                who.casefold(), who
+            )
+        return f"{who_zh} {arguments[2]} 心"
+    if predicate == "PLAYER_NPC_RELATIONSHIP":
+        who = arguments[1]
+        who_zh = VILLAGER_DISPLAY_NAMES.get(who.casefold())
+        if who_zh is None:
+            who_zh = {
+                "any": "任意村民",
+                "anydateable": "可婚配村民",
+                "krobus": "科罗布斯",
+                "dwarf": "矮人",
+            }.get(who.casefold(), who)
+        statuses = "、".join(
+            RELATIONSHIP_STATUS_ZH.get(argument, argument) for argument in arguments[2:]
+        )
+        return f"{who_zh}（{statuses}）"
+    if predicate == "PLAYER_HAS_ITEM" or predicate == "PLAYER_HAS_CRAFTING_RECIPE":
+        # 官方数据里配方名可能带空格且不加引号（Explosive Ammo），合并余下参数。
+        item = " ".join(arguments[1:])
+        item_name = query_item_display_name(item, entity_index, recipe=predicate == "PLAYER_HAS_CRAFTING_RECIPE")
+        return item_name if item_name is not None else item
+    if predicate == "PLAYER_STAT" and len(arguments) == 3:
+        stat = arguments[1]
+        stat_zh = PLAYER_STAT_ZH.get(stat)
+        if stat_zh is not None:
+            return f"{stat_zh} {arguments[2]}"
+        item_name = query_item_display_name(stat, entity_index)
+        if item_name is not None:
+            return f"{item_name} {arguments[2]}"
+        return f"{stat} {arguments[2]}"
+    if predicate == "WORLD_STATE_FIELD":
+        field = WORLD_STATE_FIELD_ZH.get(arguments[0], arguments[0])
+        values = " ".join(
+            "是" if argument.casefold() == "true"
+            else "否" if argument.casefold() == "false"
+            else argument
+            for argument in arguments[1:]
+        )
+        return f"{field} {values}"
+    if predicate == "SYNCED_RANDOM" and len(arguments) in {3, 4}:
+        key = arguments[1]
+        key_zh = SYNCED_DAY_KEY_ZH.get(key, key)
+        try:
+            chance = f"{float(arguments[2]) * 100:g}%"
+        except ValueError:
+            chance = arguments[2]
+        return f"当天同步随机：{key_zh}（{chance}）"
+    if predicate == "SYNCED_CHOICE" and len(arguments) == 5:
+        key = arguments[1]
+        key_zh = SYNCED_DAY_KEY_ZH.get(key, key)
+        return f"当天同步选择：{key_zh}（第 {arguments[4]} 档）"
+    return " ".join(arguments)
+
+
+def query_item_display_name(
+    value: str,
+    by_id: dict[str, NormalizedEntity],
+    *,
+    recipe: bool = False,
+) -> str | None:
+    """把查询里的物品/配方引用（(T)MilkPail、808、Explosive Ammo 等）解析为中文实体名。"""
+    entity_type = None
+    item_id = value
+    if value.startswith("(") and ")" in value:
+        prefix, _, rest = value[1:].partition(")")
+        entity_type = {
+            "O": "object",
+            "BC": "big_craftable",
+            "T": "tool",
+            "W": "weapon",
+            "F": "furniture",
+            "B": "footwear",
+            "TR": "trinket",
+        }.get(prefix)
+        item_id = rest
+    if entity_type is None:
+        candidate_types = ("crafting_recipe", "cooking_recipe") if recipe else ()
+        candidate_types += ("object", "big_craftable", "tool", "weapon", "furniture", "footwear")
+    else:
+        candidate_types = (entity_type,)
+    for candidate_type in candidate_types:
+        for candidate in (item_id, item_id.replace(" ", "-")):
+            entity = by_id.get(f"{candidate_type}:{candidate}")
+            if entity is not None and entity.name_zh:
+                return entity.name_zh
+    return None
+
+
 def opaque_rule_condition(
     package: Schema5Package,
     condition_id: str,
     reference: dict[str, object],
+    by_id: dict[str, NormalizedEntity] | None = None,
 ) -> str | None:
     fields = {
         key: reference.get(key)
@@ -2584,7 +3976,7 @@ def opaque_rule_condition(
     for key, value in sorted(fields.items()):
         if key == "condition" and isinstance(value, str):
             parsed, parsed_summaries, parsed_complete = game_state_query_terms(
-                condition_id, value, len(terms)
+                condition_id, value, len(terms), by_id
             )
             terms.extend(parsed)
             summaries.extend(parsed_summaries)
@@ -2603,7 +3995,25 @@ def opaque_rule_condition(
                     value_text=text,
                 )
             )
-            summaries.append(f"输入标签：{text}")
+            positives: list[str] = []
+            negatives: list[str] = []
+            unknown_tags: list[str] = []
+            for tag in value:
+                negated = tag.startswith("!")
+                resolved = ITEM_TAG_ZH.get(tag[1:] if negated else tag)
+                if resolved is None:
+                    unknown_tags.append(tag)
+                elif negated:
+                    negatives.append(resolved)
+                else:
+                    positives.append(resolved)
+            if positives:
+                summaries.append(f"输入须为：{'、'.join(positives)}")
+            if negatives:
+                summaries.append(f"排除：{'、'.join(negatives)}")
+            if unknown_tags:
+                summaries.append("输入限制：另有未识别标签要求")
+                complete = False
             continue
         if (
             key in {"requiredCount", "minDepth", "maxDepth", "minTime", "maxTime"}
@@ -2618,7 +4028,14 @@ def opaque_rule_condition(
                     value_integer=value,
                 )
             )
-            summaries.append(f"{key}：{value}")
+            label = {
+                "requiredCount": "所需数量",
+                "minDepth": "起始层",
+                "maxDepth": "结束层",
+                "minTime": "起始时间",
+                "maxTime": "结束时间",
+            }[key]
+            summaries.append(f"{label}：{value}")
             continue
         complete = False
 
@@ -2907,6 +4324,7 @@ def price_modifier_condition_terms(
     key: str,
     modifiers: object,
     ordinal: int,
+    by_id: dict[str, NormalizedEntity] | None = None,
 ) -> tuple[list[Schema5ConditionTerm], list[str], bool]:
     """Represent official modifier rows without pretending random values are fixed."""
     if not isinstance(modifiers, list) or not modifiers:
@@ -2950,12 +4368,14 @@ def price_modifier_condition_terms(
                 value_text=json.dumps(modifier, ensure_ascii=False, sort_keys=True),
             )
         )
-        summaries.append(f"{key}价格修正：{modification}")
+        scope_zh = PRICE_MODIFIER_SCOPE_ZH.get(key, key)
+        mode_zh = PRICE_MODIFIER_MODE_ZH.get(modification, modification)
+        summaries.append(f"{scope_zh}：{mode_zh} {amount}")
         if random_amount:
             summaries.append("价格修正随机取值")
         if condition:
             parsed, parsed_summaries, parsed_complete = game_state_query_terms(
-                condition_id, condition, ordinal + len(terms)
+                condition_id, condition, ordinal + len(terms), by_id
             )
             if not parsed_complete:
                 return [], [], False
@@ -2969,6 +4389,7 @@ def shop_condition(
     entity_id: str,
     slot_prefix: str,
     offer_key: str,
+    by_id: dict[str, NormalizedEntity] | None = None,
 ) -> tuple[Schema5ConditionSet | None, list[Schema5ConditionTerm]]:
     fields = {
         key: offer[key]
@@ -2991,7 +4412,7 @@ def shop_condition(
     for key, value in sorted(fields.items()):
         if key in {"condition", "perItemCondition"} and isinstance(value, str):
             parsed, parsed_summaries, parsed_complete = game_state_query_terms(
-                condition_id, value, len(terms)
+                condition_id, value, len(terms), by_id
             )
             if parsed_complete:
                 terms.extend(parsed)
@@ -2999,7 +4420,7 @@ def shop_condition(
                 continue
         if key in {"priceModifiers", "shopPriceModifiers"}:
             parsed, parsed_summaries, parsed_complete = price_modifier_condition_terms(
-                condition_id, key, value, len(terms)
+                condition_id, key, value, len(terms), by_id
             )
             if parsed_complete:
                 terms.extend(parsed)
@@ -3101,6 +4522,7 @@ def add_mine_fishing_references(
     for fish_id, location_id, min_depth, max_depth, base_chance, level_chance, bait in rules:
         if fish_id not in by_id:
             continue
+        # 稳定键保留实体 id；玩家文案在 fish_condition 里按包内实体解析为中文名。
         result.setdefault(fish_id, []).append(
             {
                 "locationId": location_id,
@@ -3109,7 +4531,7 @@ def add_mine_fishing_references(
                 "minDepth": min_depth,
                 "maxDepth": max_depth,
                 "fishingLevelChance": level_chance,
-                "baitHint": bait,
+                "baitHint": fish_id,
                 "sourceFile": "Stardew Valley.dll",
                 "sourceMethod": "StardewValley.Locations.MineShaft.getFish",
             }
@@ -3164,6 +4586,7 @@ def fish_reference_key(reference: dict[str, object]) -> str:
 def fish_condition(
     reference: dict[str, object],
     item_id: str,
+    by_id: dict[str, NormalizedEntity] | None = None,
 ) -> tuple[Schema5ConditionSet | None, list[Schema5ConditionTerm]]:
     fields = {
         key: value
@@ -3203,18 +4626,23 @@ def fish_condition(
             text = ",".join(str(item).strip() for item in season_values if str(item).strip())
             if not text:
                 continue
+            localized = " ".join(
+                SEASON_ZH.get(item.casefold(), item)
+                for item in text.split(",")
+                if item.strip()
+            )
             terms.append(
                 Schema5ConditionTerm(
                     term_id, condition_id, len(terms), "season", value_text=text
                 )
             )
-            summaries.append(f"季节：{text}")
+            summaries.append(f"季节：{localized}")
         elif key == "condition" and isinstance(value, str):
             text = value.strip()
             if not text:
                 continue
             parsed, parsed_summaries, parsed_complete = game_state_query_terms(
-                condition_id, text, len(terms)
+                condition_id, text, len(terms), by_id
             )
             if parsed_complete:
                 terms.extend(parsed)
@@ -3255,7 +4683,9 @@ def fish_condition(
                     term_id, condition_id, len(terms), "bait_hint", value_text=value
                 )
             )
-            summaries.append(f"针对性鱼饵：{value}")
+            target = (by_id or {}).get(value)
+            label = target.name_zh if target is not None and target.name_zh else value
+            summaries.append(f"针对性鱼饵：{label}")
         elif (
             key in {
                 "minFishingLevel",
@@ -3272,7 +4702,16 @@ def fish_condition(
                     term_id, condition_id, len(terms), key, value_integer=value
                 )
             )
-            summaries.append(f"{recognized[key]}：{value}")
+            display = (
+                "不限"
+                if key == "maxDistanceFromShore" and value == -1
+                else (
+                    "无等级要求"
+                    if key == "minFishingLevel" and value == 0
+                    else str(value)
+                )
+            )
+            summaries.append(f"{recognized[key]}：{display}")
         else:
             unparsed = True
             terms.append(
@@ -3545,13 +4984,24 @@ def add_inline_drop_projections(
         ):
             continue
         attributes = structured_attributes(monster)
-        locations = join_text(attributes.get("Locations"))
-        if locations is not None:
-            fixed = fixed_fact(monster, "locations", "text", text_value=locations)
-            if fixed is not None and not any(item.id == fixed.id for item in package.fact_slots):
-                package.fact_slots.append(fixed)
-                locator_id = locators_by_entity[monster.id]
-                package.claim_evidence.append(fact_claim(fixed, locator_id, package))
+        raw_locations = attributes.get("Locations")
+        if isinstance(raw_locations, list):
+            localized_locations = [
+                FISHING_LOCATION_ZH.get(str(item).strip())
+                for item in raw_locations
+                if str(item).strip()
+            ]
+            if localized_locations and all(localized_locations):
+                fixed = fixed_fact(
+                    monster,
+                    "locations",
+                    "text",
+                    text_value="、".join(localized_locations),
+                )
+                if fixed is not None and not any(item.id == fixed.id for item in package.fact_slots):
+                    package.fact_slots.append(fixed)
+                    locator_id = locators_by_entity[monster.id]
+                    package.claim_evidence.append(fact_claim(fixed, locator_id, package))
         drops = attributes.get("Drops")
         if not isinstance(drops, list):
             continue
@@ -3709,15 +5159,41 @@ def source_locators_by_entity(
     return locators_by_entity.get(entity_id, fallback)
 
 
+def recipe_output_reference(
+    entity: NormalizedEntity,
+    by_id: dict[str, NormalizedEntity],
+) -> str | None:
+    """配方产物的稳定实体引用；官方声明的产物类型优先于启发式猜测。"""
+    if entity.entity_type not in {"cooking_recipe", "crafting_recipe"}:
+        return None
+    attributes = structured_attributes(entity)
+    output_id = text_value(attributes.get("outputItemId"))
+    if not output_id:
+        return None
+    entity_type_hint = attributes.get("outputEntityType")
+    if isinstance(entity_type_hint, str) and f"{entity_type_hint}:{output_id}" in by_id:
+        return f"{entity_type_hint}:{output_id}"
+    return stable_entity_reference(attributes.get("outputItemId"), by_id)
+
+
 def recipe_output_facts(
     entity: NormalizedEntity,
     by_id: dict[str, NormalizedEntity],
 ) -> list[Schema5FactSlot]:
     if entity.entity_type not in {"cooking_recipe", "crafting_recipe"}:
         return []
-    reference = stable_entity_reference(structured_attributes(entity).get("outputItemId"), by_id)
+    reference = recipe_output_reference(entity, by_id)
     fact = fixed_fact(entity, "crafting_output_item_id", "text", text_value=reference)
     return [fact] if fact is not None else []
+
+
+# 配方里按类别引用的材料（官方物品类别号）→ 中文玩家文案。
+RECIPE_CATEGORY_INGREDIENT_ZH = {
+    "-4": "任意鱼类",
+    "-5": "任意蛋类",
+    "-6": "任意奶类",
+    "-777": "任意野生种子",
+}
 
 
 def add_recipe_material_facts(
@@ -3730,19 +5206,25 @@ def add_recipe_material_facts(
         return
     quantities: dict[str, int] = {}
     for ingredient in recipe_ingredients(entity):
-        reference = stable_entity_reference(ingredient.get("itemId"), by_id)
+        raw_item_id = text_value(ingredient.get("itemId"))
+        reference = stable_entity_reference(raw_item_id, by_id)
+        if reference is None and raw_item_id in RECIPE_CATEGORY_INGREDIENT_ZH:
+            # 类别材料（任意鱼类/蛋类/奶类）没有单一实体，作为文本材料保留。
+            reference = raw_item_id
         quantity = ingredient.get("quantity")
         if reference is None or not isinstance(quantity, int) or quantity <= 0:
             continue
         quantities[reference] = quantities.get(reference, 0) + quantity
     for ordinal, reference in enumerate(sorted(quantities)):
         scope_id = f"recipe:{entity.id}:material:{stable_part(reference)}"
+        # 类别材料直接以中文文案进入事实项；实体材料保留引用由 App 解析。
+        material_text = RECIPE_CATEGORY_INGREDIENT_ZH.get(reference, reference)
         add_support_fact_item(
             package,
             entity.id,
             "crafting_material_id",
             "text",
-            text_value=reference,
+            text_value=material_text,
             scope_id=scope_id,
             condition_set_id=None,
             ordinal=ordinal,
@@ -3791,9 +5273,7 @@ def add_recipe_output_material_facts(
     for recipe in entities:
         if recipe.entity_type != "crafting_recipe":
             continue
-        output_id = stable_entity_reference(
-            structured_attributes(recipe).get("outputItemId"), by_id
-        )
+        output_id = recipe_output_reference(recipe, by_id)
         if output_id is not None and output_id in by_id:
             recipes_by_output[output_id].append(recipe)
 
@@ -3827,6 +5307,22 @@ def add_recipe_output_material_facts(
             locator_id = locators_by_entity.get(recipe.id)
             if locator_id is None:
                 raise ValueError(f"制作配方缺少来源定位：{recipe.id}")
+            unlock = unlock_label(
+                structured_attributes(recipe).get("UnlockCondition") or "default", by_id
+            )
+            if unlock is not None:
+                add_support_fact_item(
+                    package,
+                    entity.id,
+                    "unlock",
+                    "text",
+                    text_value=unlock,
+                    scope_id=f"recipe-output:{stable_part(recipe.id)}:unlock",
+                    condition_set_id=None,
+                    ordinal=0,
+                    locator_id=locator_id,
+                    transformation_rule="official-recipe-unlock-to-player-facts-v1",
+                )
             for ordinal, reference in enumerate(sorted(quantities)):
                 scope_id = (
                     f"recipe-output:{stable_part(recipe.id)}:material:{stable_part(reference)}"
@@ -3908,29 +5404,43 @@ def typed_facts(
             )
         birthday = attributes.get("BirthSeason"), attributes.get("BirthDay")
         if isinstance(birthday[0], str) and isinstance(birthday[1], int):
-            facts.append(
-                Schema5FactSlot(
-                    id=f"fact:{entity.id}:birthday",
-                    entity_id=entity.id,
-                    slot_key="birthday",
-                    status="fixed",
-                    value_type="text",
-                    text_value=f"{birthday[0]} {birthday[1]}",
+            season_zh = SEASON_ZH.get(birthday[0].lower())
+            if season_zh is not None:
+                facts.append(
+                    Schema5FactSlot(
+                        id=f"fact:{entity.id}:birthday",
+                        entity_id=entity.id,
+                        slot_key="birthday",
+                        status="fixed",
+                        value_type="text",
+                        text_value=f"{season_zh} {birthday[1]} 日",
+                    )
                 )
-            )
+        residence = text_value(attributes.get("HomeRegion"))
+        gender = text_value(attributes.get("Gender"))
         facts.extend(
             [
                 fixed_fact(
                     entity,
                     "residence_region",
                     "text",
-                    text_value=text_value(attributes.get("HomeRegion")),
+                    text_value=(
+                        RESIDENCE_REGION_ZH.get(residence, "未注明") if residence else None
+                    ),
                 ),
-                fixed_fact(
-                    entity,
-                    "gender",
-                    "text",
-                    text_value=text_value(attributes.get("Gender")),
+                *(
+                    [
+                        fixed_fact(
+                            entity,
+                            "gender",
+                            "text",
+                            text_value=GENDER_ZH[gender],
+                        )
+                    ]
+                    if gender in GENDER_ZH
+                    else [
+                        not_applicable_fact(entity, "gender")
+                    ]
                 ),
             ]
         )
@@ -3938,7 +5448,10 @@ def typed_facts(
         facts.extend(
             [
                 fixed_fact(
-                    entity, "seasons", "text", text_value=join_text(attributes.get("Seasons"))
+                    entity,
+                    "seasons",
+                    "text",
+                    text_value=localized_seasons(attributes.get("Seasons")),
                 ),
                 fixed_fact(
                     entity,
@@ -3990,6 +5503,40 @@ def typed_facts(
                 integer_value=int_value(attributes.get("Price")),
             )
         )
+    if entity.entity_type == "tool":
+        kind_zh = tool_kind_label(entity)
+        if kind_zh is not None:
+            facts.append(
+                fixed_fact(entity, "tool_kind", "text", text_value=kind_zh)
+            )
+        level_zh = tool_level_label(entity)
+        if level_zh is not None:
+            facts.append(
+                fixed_fact(entity, "tool_level", "text", text_value=level_zh)
+            )
+        upgrade_from = (
+            attributes.get("UpgradeRequireToolId")
+            or attributes.get("ConventionalUpgradeFrom")
+        )
+        if isinstance(upgrade_from, str) and upgrade_from:
+            base = (
+                upgrade_from.removeprefix("(T)")
+                if upgrade_from.startswith("(T)")
+                else upgrade_from
+            )
+            reference = f"tool:{base}"
+            if (by_id or {}).get(reference) is not None:
+                facts.append(
+                    fixed_fact(entity, "upgrade_from_id", "text", text_value=reference)
+                )
+        if attributes.get("UpgradeMaterial"):
+            # 官方 ClintUpgrade 商店与游戏规则：在铁匠铺升级，耗时 2 天。
+            facts.append(
+                fixed_fact(entity, "upgrade_location", "text", text_value="铁匠铺")
+            )
+            facts.append(
+                fixed_fact(entity, "upgrade_time", "text", text_value="2 天")
+            )
     if entity.entity_type in {"big_craftable", "tool", "weapon"}:
         facts.extend(
             [
@@ -4060,6 +5607,21 @@ def typed_facts(
                 ]
             )
         if entity.entity_type == "weapon":
+            weapon_id = text_value(entity.game_id)
+            if weapon_id in WEAPON_SCYTHE_IDS:
+                type_zh = "镰刀"
+            else:
+                weapon_type = int_value(attributes.get("Type"))
+                type_zh = WEAPON_TYPE_ZH.get(weapon_type) if weapon_type is not None else None
+            if type_zh is not None:
+                facts.append(
+                    fixed_fact(
+                        entity,
+                        "weapon_type",
+                        "text",
+                        text_value=type_zh,
+                    )
+                )
             facts.append(
                 fixed_fact(
                     entity,
@@ -4068,6 +5630,40 @@ def typed_facts(
                     integer_value=weapon_sell_price(entity, attributes),
                 )
             )
+    if entity.entity_type == "monster":
+        facts.extend(
+            [
+                fixed_fact(
+                    entity,
+                    "health",
+                    "integer",
+                    integer_value=int_value(attributes.get("monsterHealth")),
+                ),
+                fixed_fact(
+                    entity,
+                    "damage",
+                    "integer",
+                    integer_value=int_value(attributes.get("monsterDamage")),
+                ),
+            ]
+        )
+    if entity.entity_type == "footwear":
+        facts.extend(
+            [
+                fixed_fact(
+                    entity,
+                    "defense",
+                    "integer",
+                    integer_value=int_value(attributes.get("footwearDefense")),
+                ),
+                fixed_fact(
+                    entity,
+                    "immunity",
+                    "integer",
+                    integer_value=int_value(attributes.get("footwearImmunity")),
+                ),
+            ]
+        )
     if entity.entity_type == "crop" and by_id is not None:
         harvest_id = text_value(attributes.get("HarvestItemId"))
         harvest = by_id.get(f"object:{harvest_id}") if harvest_id else None
@@ -4108,7 +5704,11 @@ def typed_facts(
                         entity,
                         "behavior",
                         "text",
-                        text_value=text_value(attributes.get("Behavior")),
+                        text_value=(
+                            FISH_BEHAVIOR_ZH.get(behavior)
+                            if (behavior := text_value(attributes.get("Behavior"))) is not None
+                            else None
+                        ),
                     ),
                     fixed_fact(
                         entity,
@@ -4126,19 +5726,23 @@ def typed_facts(
                         entity,
                         "fishing_time",
                         "text",
-                        text_value=text_value(attributes.get("FishingTime")),
+                        text_value=localized_fishing_time(attributes.get("FishingTime")),
                     ),
                     fixed_fact(
                         entity,
                         "seasons",
                         "text",
-                        text_value=join_text(attributes.get("Seasons")),
+                        text_value=localized_seasons(attributes.get("Seasons")),
                     ),
                     fixed_fact(
                         entity,
                         "weather",
                         "text",
-                        text_value=text_value(attributes.get("Weather")),
+                        text_value=(
+                            FISH_WEATHER_ZH.get(weather)
+                            if (weather := text_value(attributes.get("Weather"))) is not None
+                            else None
+                        ),
                     ),
                 ]
             )

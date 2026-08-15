@@ -181,13 +181,14 @@ def add_legacy_structured_metadata(
             )
         )
     elif entity_type == "footwear":
+        # Boots 旧格式：名称/描述/价格/防御/免疫/贴图索引/显示名。
         attributes.update(
             compact_typed_values(
                 {
                     "footwearDescription": legacy_text(fields, 1),
-                    "footwearDefense": legacy_int(fields, 2),
-                    "footwearImmunity": legacy_int(fields, 3),
-                    "footwearPrice": legacy_int(fields, 5),
+                    "footwearPrice": legacy_int(fields, 2),
+                    "footwearDefense": legacy_int(fields, 3),
+                    "footwearImmunity": legacy_int(fields, 4),
                     "footwearDisplayName": legacy_text(fields, 6),
                 }
             )
@@ -223,15 +224,22 @@ def add_legacy_structured_metadata(
         ingredients = parse_ingredients(fields[0] if fields else None)
         if ingredients:
             attributes["Ingredients"] = ingredients
+        if entity_type == "crafting_recipe" and len(fields) > 4:
+            unlock = legacy_text(fields, 4)
+            if unlock and unlock != "null":
+                attributes["UnlockCondition"] = unlock
     elif entity_type == "bundle":
         ingredients = parse_bundle_ingredients(fields[2] if len(fields) > 2 else None)
         if ingredients:
             attributes["BundleIngredients"] = ingredients
     elif entity_type == "villager_gift":
+        # NPCGiftTastes 记录为「反应台词/物品列表」交错格式：台词占偶数位，
+        # 物品列表按 喜爱/喜欢/一般/讨厌/不喜欢 顺序占奇数位 1/3/5/7/9
+        # （与游戏 NPC.getGiftTasteForThisItem 的读取方式一致）。
         preferences = ("loved", "liked", "neutral", "disliked", "hated")
         attributes["GiftTastes"] = [
             {"preference": preference, "items": split_words(fields, index) or []}
-            for index, preference in enumerate(preferences)
+            for preference, index in zip(preferences, (1, 3, 5, 7, 9), strict=False)
             if index < len(fields)
         ]
     elif entity_type == "npc_schedule":

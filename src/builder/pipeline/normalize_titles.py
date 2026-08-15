@@ -180,6 +180,22 @@ LOST_ITEM_TITLES = {
     "(s)1127": "艾米丽的魔法衬衫",
 }
 
+# 官方 zh-CN 字符串未翻译（游戏内也显示英文）时，按社区通用译名补齐显示名。
+# 键为 (entity_type, source_id)；仅当官方中文名不含中文时生效，官方补翻译后自动让位。
+OFFICIAL_ZH_GAP_NAMES: dict[tuple[str, str], str] = {
+    ("monster", "Iridium Golem"): "铱石魔",
+    ("monster", "Truffle Crab"): "松露蟹",
+    ("object", "742"): "海莉丢失的手镯",
+    ("object", "DriedFruit"): "果干",
+    ("object", "DriedMushrooms"): "干蘑菇",
+    ("object", "SmokedFish"): "熏鱼",
+    ("furniture", "CCFishTank"): "社区中心鱼缸",
+    ("furniture", "J"): "Joja 标志画",
+    ("furniture", "UFO"): "UFO 摆件",
+    ("big_craftable", "221"): "物品展示台",
+    ("big_craftable", "155"): "大型可制作物（未命名，编号 155）",
+}
+
 
 def shop_title(
     entity: NormalizedEntity,
@@ -314,6 +330,9 @@ def ginger_event_name(event_id: str) -> str:
 def fallback_name(primary: object, name: str | None) -> str:
     entity_type = primary.entity_type
     source_id = primary.source_id
+    gap_name = OFFICIAL_ZH_GAP_NAMES.get((entity_type, str(source_id or "").strip()))
+    if gap_name is not None and name and not re.search(r"[\u4e00-\u9fff]", name):
+        return gap_name
     if entity_type in {"npc_schedule", "villager_gift"}:
         return name or "未命名"
     if entity_type in {"ginger_island", "shop", "tailoring_recipe"}:

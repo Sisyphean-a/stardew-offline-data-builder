@@ -267,7 +267,8 @@ def localization_keys(entity_type: str, internal_name: str, field: str) -> tuple
     if entity_type == "villager" and field == "name":
         return (internal_name,)
     suffix = "Name" if field == "name" else "Description"
-    compact_name = internal_name.replace(" ", "")
+    # 官方字符串键会去掉空格与标点（Ms. Angler → MsAngler_Name）。
+    compact_name = re.sub(r"[^A-Za-z0-9]+", "", internal_name)
     return (
         f"{internal_name}_{suffix}",
         f"{compact_name}_{suffix}",

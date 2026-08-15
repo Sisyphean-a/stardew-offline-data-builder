@@ -108,6 +108,7 @@ def build_schema5_candidate_command(
                     ),
                 )
                 write_shop_price_diagnostics(staging_dir, candidate)
+                write_gift_reference_diagnostics(staging_dir, candidate)
                 ensure_core_fact_slots(candidate)
                 release_coverage = validate_release_coverage(candidate)
                 validate_regression_budget(output_dir, release_coverage, candidate)
@@ -222,6 +223,19 @@ def write_shop_price_diagnostics(output_dir: Path, candidate: Schema5Package) ->
         sorted(
             candidate.shop_price_diagnostics,
             key=lambda row: (str(row.get("entityId")), str(row.get("offerKey"))),
+        ),
+    )
+
+
+def write_gift_reference_diagnostics(output_dir: Path, candidate: Schema5Package) -> None:
+    """Persist unresolved gift token audit rows (player facts must stay clean)."""
+    reports_dir = output_dir / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    dump_json_file(
+        reports_dir / "gift-reference-diagnostics.json",
+        sorted(
+            candidate.gift_reference_diagnostics,
+            key=lambda row: str(row.get("token")),
         ),
     )
 

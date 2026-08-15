@@ -39,7 +39,7 @@ ENTITY_TYPE_LABELS = {
     "shop": "商店",
     "special_order": "特殊订单",
     "ginger_island": "姜岛数据",
-    "npc_schedule": "NPC日程",
+    "npc_schedule": "日程记录",
     "villager_gift": "村民礼物",
     "cooking_recipe": "料理",
     "crafting_recipe": "制作配方",

@@ -16,6 +16,7 @@ from typing import Any
 import orjson
 
 from builder import __version__
+from builder.config import ENTITY_TYPE_LABELS
 from builder.models_schema5 import Schema5Entity
 from builder.pipeline.schema5_contract import (
     CONTENT_CONTRACT,
@@ -153,7 +154,7 @@ def build_schema5_metadata(
     entity_types = [
         {
             "id": entity_type,
-            "displayName": entity_type,
+            "displayName": ENTITY_TYPE_LABELS.get(entity_type, entity_type),
             "count": count,
         }
         for entity_type, count in sorted(counts.items())

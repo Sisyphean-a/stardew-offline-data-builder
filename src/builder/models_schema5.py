@@ -226,6 +226,7 @@ class Schema5Package:
     id_aliases: list[Schema5IdAlias] = field(default_factory=list)
     # Build-only audit rows; they are emitted into reports, never into the public DB API.
     shop_price_diagnostics: list[dict[str, object]] = field(default_factory=list)
+    gift_reference_diagnostics: list[dict[str, object]] = field(default_factory=list)
 
 
 # These aliases make protocol closure visible to callers without duplicating the

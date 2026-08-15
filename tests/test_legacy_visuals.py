@@ -68,7 +68,7 @@ def test_legacy_visual_records_use_their_real_sprite_metadata(tmp_path: Path) ->
     by_id = {entity.id: entity for entity in entities}
 
     assert by_id["achievement:0"].extra_json["imageRect"] == [192, 128, 64, 64]
-    assert by_id["villager:Abigail"].extra_json["imageRect"] == [0, 0, 32, 64]
+    assert by_id["villager:Abigail"].extra_json["imageRect"] == [0, 0, 64, 64]
     assert by_id["object:1"].extra_json["imageGridCellSize"] == [16, 16]
     assert by_id["footwear:1"].extra_json["spriteIndex"] == 1
     assert by_id["big_craftable:1"].extra_json["imageGridCellSize"] == [16, 32]
@@ -87,7 +87,7 @@ def test_legacy_visual_records_use_their_real_sprite_metadata(tmp_path: Path) ->
         "footwear-1.webp": (16, 16),
         "furniture-0.webp": (16, 32),
         "furniture-1.webp": (32, 48),
-        "villager-Abigail.webp": (32, 64),
+        "villager-Abigail.webp": (64, 64),
     }
 
 

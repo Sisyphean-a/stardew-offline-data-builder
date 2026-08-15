@@ -58,7 +58,7 @@ def enrich_fixture_entries(unpacked_dir: Path) -> None:
         path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
     locations = {
-        "River": {
+        "Town": {
             "Fish": [
                 {
                     "ItemId": "(O)sturgeon",
@@ -102,9 +102,9 @@ def fixture_attributes(entity_type: str) -> dict[str, object]:
             "Behavior": "mixed",
             "MinSize": 10,
             "MaxSize": 30,
-            "FishingTime": "6:00-19:00",
+            "FishingTime": "600 1900",
             "Seasons": ["Spring"],
-            "Weather": "any",
+            "Weather": "both",
             "Price": 75,
         },
         "villager": {
@@ -139,7 +139,7 @@ def fixture_attributes(entity_type: str) -> dict[str, object]:
             "Acquisition": "商店购买",
         },
         "monster": {
-            "Locations": ["Mines"],
+            "Locations": ["UndergroundMine"],
             "Drops": [{"itemId": "24", "chance": 0.5}],
         },
     }.get(entity_type, {})
