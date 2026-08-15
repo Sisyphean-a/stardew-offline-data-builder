@@ -322,11 +322,22 @@ def validate_schema5_package(package: Schema5Package, *, publishable: bool) -> N
         if slot.status in {"unknown", "not_collected", "not_applicable"} and values:
             raise ValueError(f"缺失事实不能携带值：{slot.id}")
         if (
-            slot.status in {"fixed", "conditional", "dynamic_rule"}
+            slot.status in {"fixed", "conditional"}
             and not values
             and not slot_items
         ):
             raise ValueError(f"已知事实缺少类型化值：{slot.id}")
+        if slot.status == "dynamic_rule" and not values and not slot_items:
+            rule_slot_id = f"fact:{slot.entity_id}:{slot.slot_key}_rule"
+            rule_slot = next(
+                (candidate for candidate in package.fact_slots if candidate.id == rule_slot_id),
+                None,
+            )
+            if rule_slot is None or (
+                not typed_value_present(rule_slot)
+                and not items_by_slot.get(rule_slot_id)
+            ):
+                raise ValueError(f"动态事实缺少可解释规则：{slot.id}")
         if slot.status == "conditional" and slot.condition_set_id not in condition_ids:
             raise ValueError(f"条件事实缺少条件集合：{slot.id}")
         if slot.condition_set_id is not None and slot.condition_set_id not in condition_ids:

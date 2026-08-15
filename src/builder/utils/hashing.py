@@ -19,3 +19,15 @@ def sha256_paths(paths: list[Path]) -> str:
         if path.is_file():
             digest.update(path.read_bytes())
     return digest.hexdigest()
+
+
+def sha256_relative_paths(root: Path, paths: list[Path]) -> str:
+    """Hash a file tree by its portable relative paths and bytes."""
+    resolved_root = root.resolve()
+    digest = sha256()
+    for path in sorted(paths, key=lambda item: item.relative_to(resolved_root).as_posix()):
+        resolved_path = path.resolve()
+        digest.update(resolved_path.relative_to(resolved_root).as_posix().encode("utf-8"))
+        if resolved_path.is_file():
+            digest.update(resolved_path.read_bytes())
+    return digest.hexdigest()

@@ -11,7 +11,7 @@ scope: workspace
 - [context:offline-official-data](contexts/offline-official-data.md)：官方资产、本地化、标准化和质量边界。代码位置：`src/builder/sources`、`src/builder/parsers`、`src/builder/pipeline`、`tests`。
 - [package:builder](../architecture/packages/builder.md)：实现该领域上下文的唯一 Python 包。
 - [shared:artifact-contract](../architecture/shared/artifact-contract.md)：构建产物跨 SQLite、manifest、报告和 `.svdata` 的共享契约。
-- 架构决定：[`adrs/003-official-evidence-first-and-governed-supplements.md`](adrs/003-official-evidence-first-and-governed-supplements.md)、[`adrs/002-quality-gated-publish-artifacts.md`](adrs/002-quality-gated-publish-artifacts.md)、[`adrs/004-player-facts-v1-publish-contract.md`](adrs/004-player-facts-v1-publish-contract.md)；ADR 003 已替代 ADR 001。
+- 架构决定：[`adrs/003-official-evidence-first-and-governed-supplements.md`](adrs/003-official-evidence-first-and-governed-supplements.md)、[`adrs/002-quality-gated-publish-artifacts.md`](adrs/002-quality-gated-publish-artifacts.md)、[`adrs/004-player-facts-v1-publish-contract.md`](adrs/004-player-facts-v1-publish-contract.md)、[`adrs/005-current-version-unobtainable-weapons.md`](adrs/005-current-version-unobtainable-weapons.md)；ADR 003 已替代 ADR 001。
 
 ## 通用语言
 

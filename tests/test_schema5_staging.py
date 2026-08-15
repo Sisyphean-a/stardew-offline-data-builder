@@ -143,9 +143,60 @@ def test_nonspawnable_legacy_monster_location_is_not_applicable(tmp_path: Path) 
 
     slot = next(slot for slot in package.fact_slots if slot.id == "fact:monster:Crow:locations")
     assert slot.status == "not_applicable"
-    item = next(item for item in package.fact_items if item.slot_id == slot.id)
-    assert item.text_value == "当前版本不作为独立可生成战斗怪物"
+    assert not any(item.slot_id == slot.id for item in package.fact_items)
+    drops = next(slot for slot in package.fact_slots if slot.id == "fact:monster:Crow:drops")
+    assert drops.status == "not_applicable"
 
+
+def test_noncombat_monster_ignores_legacy_drop_record(tmp_path: Path) -> None:
+    package = build_schema5_staging_package(
+        [
+            entity("monster:Crow", "monster"),
+            entity("object:1", "object"),
+            entity(
+                "drop:Crow:0",
+                "drop",
+                extra_json={"monsterId": "Crow", "itemId": "1", "chance": "0.5"},
+            ),
+        ],
+        tmp_path,
+        game_version="1.6.15",
+        support=OfficialSupportData(),
+    )
+    slot = next(slot for slot in package.fact_slots if slot.id == "fact:monster:Crow:drops")
+    assert slot.status == "not_applicable"
+    assert not any(item.slot_id == slot.id for item in package.fact_items)
+
+
+def test_unobtainable_weapon_policy_is_exact_release_bound(tmp_path: Path) -> None:
+    weapon = entity("weapon:34", "weapon")
+    bound = build_schema5_staging_package(
+        [weapon],
+        tmp_path,
+        game_version="1.6.15.24356",
+        support=OfficialSupportData(),
+        official_release_binding=(
+            "7f1e5b8e58d2758b78570ba771bbeb03d33522f62188bf6c32edf0cf626deaee",
+            "d582dd6b3e9260eee2f26c00d16a14704e4ef44a3d2cf0a4de94f9375c356222",
+        ),
+    )
+    slot = next(slot for slot in bound.fact_slots if slot.id == "fact:weapon:34:acquisition")
+    assert slot.status == "not_applicable"
+    assert any(
+        evidence.transformation_rule == "official-current-version-unobtainable-weapon-v1"
+        for evidence in bound.evidence
+    )
+
+    changed_asset = build_schema5_staging_package(
+        [weapon],
+        tmp_path,
+        game_version="1.6.15.24356",
+        support=OfficialSupportData(),
+        official_release_binding=("different-dll", "different-assets"),
+    )
+    assert not any(
+        slot.id == "fact:weapon:34:acquisition" for slot in changed_asset.fact_slots
+    )
 
 
 def test_monster_drop_projection_keeps_item_reference_and_chance_condition(
@@ -740,8 +791,8 @@ def test_shop_projection_emits_purchase_and_seed_offer_facts(tmp_path: Path) -> 
         for condition in package.condition_sets
         if condition.id == object_price.condition_set_id
     )
-    assert condition.completeness == "opaque"
-    assert "商店报价受游戏条件或价格规则限制" == condition.player_summary
+    assert condition.completeness == "complete"
+    assert "季节：SEASON spring" == condition.player_summary
     assert any(
         item.slot_id == "fact:object:472:purchase_currency"
         and item.text_value == "金币"

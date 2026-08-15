@@ -36,6 +36,7 @@ from builder.sources.override_source import (
     load_categories,
     load_entity_overrides,
 )
+from builder.utils.hashing import sha256_file, sha256_relative_paths
 from builder.utils.json_io import dump_json_file, load_json_file
 from builder.utils.time import current_utc_iso
 from builder.utils.versions import game_version
@@ -98,6 +99,13 @@ def build_schema5_candidate_command(
                     game_version=detected_game_version,
                     support=official.support,
                     support_entities=formal_entities,
+                    official_release_binding=(
+                        sha256_file(resolved_game_dir / "Stardew Valley.dll"),
+                        sha256_relative_paths(
+                            resolved_unpacked_dir,
+                            sorted(resolved_unpacked_dir.rglob("*.json")),
+                        ),
+                    ),
                 )
                 write_shop_price_diagnostics(staging_dir, candidate)
                 ensure_core_fact_slots(candidate)

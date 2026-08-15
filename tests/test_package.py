@@ -10,11 +10,22 @@ from typer.testing import CliRunner
 from builder.cli import app
 from builder.commands.package import package_entries
 from builder.config import EXIT_PACKAGE
-from builder.utils.hashing import sha256_file
+from builder.utils.hashing import sha256_file, sha256_relative_paths
 from tests.complete_fixture import add_required_entity_baseline
 
 runner = CliRunner()
 FIXED_TIME = "2026-07-15T00:00:00+00:00"
+
+
+def test_relative_tree_hash_is_independent_of_parent_directory(tmp_path: Path) -> None:
+    first = tmp_path / "first" / "Content (unpacked)"
+    second = tmp_path / "second" / "Content (unpacked)"
+    for root in (first, second):
+        (root / "Data").mkdir(parents=True)
+        (root / "Data" / "Objects.json").write_text('{"1": {}}', encoding="utf-8")
+    assert sha256_relative_paths(first, list(first.rglob("*.json"))) == sha256_relative_paths(
+        second, list(second.rglob("*.json"))
+    )
 
 
 def test_build_writes_manifest_and_svdata(tmp_path: Path, monkeypatch) -> None:

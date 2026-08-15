@@ -10,7 +10,7 @@ scope: workspace
 
 - [package:builder](packages/builder.md)：CLI、官方资产发现与解析、标准化、关联、图片物化、SQLite、报告和 `.svdata` 发布。
 - [shared:artifact-contract](shared/artifact-contract.md)：构建元数据在 SQLite、manifest、报告和 `.svdata` 之间保持一致的契约。
-- 架构决定：[`requirements/adrs/002-quality-gated-publish-artifacts.md`](../requirements/adrs/002-quality-gated-publish-artifacts.md)、[`requirements/adrs/003-official-evidence-first-and-governed-supplements.md`](../requirements/adrs/003-official-evidence-first-and-governed-supplements.md)、[`requirements/adrs/004-player-facts-v1-publish-contract.md`](../requirements/adrs/004-player-facts-v1-publish-contract.md)；ADR 001 已由 ADR 003 替代。
+- 架构决定：[`requirements/adrs/002-quality-gated-publish-artifacts.md`](../requirements/adrs/002-quality-gated-publish-artifacts.md)、[`requirements/adrs/003-official-evidence-first-and-governed-supplements.md`](../requirements/adrs/003-official-evidence-first-and-governed-supplements.md)、[`requirements/adrs/004-player-facts-v1-publish-contract.md`](../requirements/adrs/004-player-facts-v1-publish-contract.md)、[`requirements/adrs/005-current-version-unobtainable-weapons.md`](../requirements/adrs/005-current-version-unobtainable-weapons.md)；ADR 001 已由 ADR 003 替代。
 
 ## 公开入口
 

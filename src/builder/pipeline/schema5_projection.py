@@ -40,6 +40,45 @@ structured_attributes = production_attributes
 
 RELATION_FAMILIES = {"kinship", "friendship", "love_interest"}
 
+# The builder does not evaluate GameStateQuery; it preserves every supported
+# predicate as a typed conditional term so the package can accurately state
+# what must be true without pretending it knows the player's current save.
+GAME_STATE_QUERY_LABELS = {
+    "ANY": "满足任一子条件",
+    "DAY_OF_MONTH": "日期",
+    "DAY_OF_WEEK": "星期",
+    "DAYS_PLAYED": "已游玩天数",
+    "IS_COMMUNITY_CENTER_COMPLETE": "社区中心完成状态",
+    "IS_FESTIVAL_DAY": "节日状态",
+    "IS_MULTIPLAYER": "多人模式",
+    "IS_PASSIVE_FESTIVAL_OPEN": "被动节日开放状态",
+    "ITEM_CONTEXT_TAG": "输入物品标签",
+    "ITEM_EDIBILITY": "输入物品可食用性",
+    "LOCATION_SEASON": "地点季节",
+    "MINE_LOWEST_LEVEL_REACHED": "矿井最深进度",
+    "MUSEUM_DONATIONS": "博物馆捐赠数",
+    "PLAYER_BASE_FARMING_LEVEL": "玩家基础耕种等级",
+    "PLAYER_BASE_FISHING_LEVEL": "玩家基础钓鱼等级",
+    "PLAYER_FARMHOUSE_UPGRADE": "农舍升级等级",
+    "PLAYER_HAS_CONVERSATION_TOPIC": "玩家对话主题",
+    "PLAYER_HAS_CRAFTING_RECIPE": "玩家制作配方",
+    "PLAYER_HAS_ITEM": "玩家持有物品",
+    "PLAYER_HAS_MAIL": "玩家邮件状态",
+    "PLAYER_HAS_SEEN_EVENT": "玩家已观看事件",
+    "PLAYER_HEARTS": "玩家好感度",
+    "PLAYER_NPC_RELATIONSHIP": "玩家与 NPC 关系",
+    "PLAYER_SPECIAL_ORDER_RULE_ACTIVE": "特别订单规则状态",
+    "PLAYER_STAT": "玩家统计值",
+    "RANDOM": "随机概率",
+    "SEASON": "季节",
+    "SYNCED_CHOICE": "同步随机选择",
+    "SYNCED_RANDOM": "同步随机概率",
+    "TIME": "时间",
+    "WEATHER": "天气",
+    "WORLD_STATE_FIELD": "世界状态字段",
+    "YEAR": "年份",
+}
+
 # These tables mirror the item branches in the official game code.  They are
 # deliberately separate from Weapons.json's MineBaseLevel/MineMinLevel fields:
 # those fields are not, on their own, a player-facing acquisition location.
@@ -89,6 +128,16 @@ MINE_REMIXED_CHEST_WEAPONS: dict[str, tuple[int, ...]] = {
     "50": (110,),
     "28": (110,),
 }
+# This is an official-code audit conclusion, not a missing-acquisition
+# exemption. It only applies to the exact DLL and unpacked official-data hashes
+# below; a version/hash change leaves the slot not_collected for fresh review.
+CURRENT_VERSION_UNOBTAINABLE_WEAPON_IDS = {"34", "49"}
+CURRENT_VERSION_UNOBTAINABLE_WEAPON_BINDING = (
+    "1.6.15.24356",
+    "7f1e5b8e58d2758b78570ba771bbeb03d33522f62188bf6c32edf0cf626deaee",
+    "d582dd6b3e9260eee2f26c00d16a14704e4ef44a3d2cf0a4de94f9375c356222",
+)
+
 VOLCANO_CHEST_WEAPONS: dict[str, int] = {
     "54": 0,
     "55": 0,
@@ -281,6 +330,9 @@ NON_SPAWNABLE_MONSTER_LOCATION_IDS = {
     "monster:Shadow-Guy",
     "monster:Skeleton-Warrior",
 }
+# These legacy rows are ambient/non-combat records, not killable enemies. Their
+# old stat-catalogue drops cannot answer player loot in the current game.
+NON_COMBAT_MONSTER_DROP_IDS = {"monster:Cat", "monster:Crow", "monster:Frog"}
 
 
 SPECIAL_WEAPON_ACQUISITION_RULES: dict[str, tuple[str, str, str]] = {
@@ -367,6 +419,7 @@ def build_schema5_package(
     game_version: str,
     support: OfficialSupportData | None = None,
     support_entities: list[NormalizedEntity] | None = None,
+    official_release_binding: tuple[str, str] | None = None,
 ) -> Schema5Package:
     """Project normalized official input into an isolated typed schema-5 package.
 
@@ -461,7 +514,13 @@ def build_schema5_package(
     package.source_locators = sorted(source_locators.values(), key=lambda item: item.id)
     if support is not None:
         add_typed_support_projections(
-            package, entities, support, entity_ids, game_version, locators_by_entity
+            package,
+            entities,
+            support,
+            entity_ids,
+            game_version,
+            locators_by_entity,
+            official_release_binding,
         )
     if support_entities:
         add_villager_support_projections(package, support_entities, by_id, game_version)
@@ -521,6 +580,7 @@ def build_schema5_staging_package(
     game_version: str,
     support: OfficialSupportData | None = None,
     support_entities: list[NormalizedEntity] | None = None,
+    official_release_binding: tuple[str, str] | None = None,
 ) -> Schema5Package:
     """Compatibility entrypoint for explicitly non-publishable staging.
 
@@ -548,6 +608,7 @@ def build_schema5_staging_package(
         game_version=game_version,
         support=support,
         support_entities=staged_support_entities,
+        official_release_binding=official_release_binding,
     )
 
 
@@ -560,6 +621,11 @@ def add_villager_support_projections(
     """Aggregate schedule and gift records into typed villager facts."""
     documents = {document.id: document for document in package.source_documents}
     locators = {locator.id: locator for locator in package.source_locators}
+    ordinals_by_slot: dict[str, int] = defaultdict(int)
+    for item in package.fact_items:
+        ordinals_by_slot[item.slot_id] = max(
+            ordinals_by_slot[item.slot_id], item.ordinal + 1
+        )
     for support_entity in support_entities:
         owner_id = support_entity.game_id.split(":", 1)[0] if support_entity.game_id else ""
         villager_id = f"villager:{owner_id}"
@@ -592,6 +658,8 @@ def add_villager_support_projections(
         if support_entity.entity_type == "npc_schedule":
             text = schedule_fact_text(attributes)
             if text:
+                slot_id = f"fact:{villager_id}:schedule"
+                ordinal = ordinals_by_slot[slot_id]
                 add_support_fact_item(
                     package,
                     villager_id,
@@ -600,12 +668,17 @@ def add_villager_support_projections(
                     text_value=text,
                     scope_id=f"schedule:{stable_part(support_entity.id)}",
                     condition_set_id=None,
-                    ordinal=0,
+                    ordinal=ordinal,
                     locator_id=locator_id,
                     transformation_rule="official-npc-schedule-to-player-facts-v1",
                 )
+                ordinals_by_slot[slot_id] += 1
         elif support_entity.entity_type == "villager_gift":
-            for ordinal, (preference, item) in enumerate(gift_fact_items(attributes, by_id)):
+            slot_id = f"fact:{villager_id}:gift_preferences"
+            for item_index, (preference, item) in enumerate(
+                gift_fact_items(attributes, by_id)
+            ):
+                ordinal = ordinals_by_slot[slot_id]
                 add_support_fact_item(
                     package,
                     villager_id,
@@ -614,13 +687,14 @@ def add_villager_support_projections(
                     text_value=item,
                     scope_id=(
                         f"gift:{stable_part(support_entity.id)}:"
-                        f"{stable_part(preference)}:{ordinal}"
+                        f"{stable_part(preference)}:{item_index}"
                     ),
                     condition_set_id=None,
                     ordinal=ordinal,
                     locator_id=locator_id,
                     transformation_rule="official-villager-gifts-to-player-facts-v1",
                 )
+                ordinals_by_slot[slot_id] += 1
     package.source_documents = sorted(documents.values(), key=lambda item: item.id)
     package.source_locators = sorted(locators.values(), key=lambda item: item.id)
 
@@ -740,6 +814,7 @@ def add_typed_support_projections(
     entity_ids: set[str],
     game_version: str,
     locators_by_entity: dict[str, str] | None = None,
+    official_release_binding: tuple[str, str] | None = None,
 ) -> None:
     """Project stable support references without exposing raw support JSON.
 
@@ -914,6 +989,7 @@ def add_typed_support_projections(
         source_documents,
         source_locators,
         game_version,
+        official_release_binding,
     )
     add_machine_and_usage_projections(
         package,
@@ -991,6 +1067,7 @@ def add_runtime_monster_location_projections(
             locator_id=locator_id,
             transformation_rule="official-runtime-monster-location-to-player-facts-v1",
             status="conditional",
+            fact_condition_set_id=condition_id,
         )
         add_support_facet(
             package,
@@ -1012,20 +1089,56 @@ def add_runtime_monster_location_projections(
                 record_key="runtime-monster-spawn-audit",
             ),
         )
-        add_support_fact_item(
-            package,
-            monster_id,
-            "locations",
-            "text",
-            text_value="当前版本不作为独立可生成战斗怪物",
-            scope_id=f"monster-location-not-applicable:{monster_id}",
-            condition_set_id=None,
-            ordinal=0,
-            locator_id=locator_id,
-            transformation_rule="official-current-version-nonspawnable-monster-v1",
-            status="not_applicable",
+        slot_id = f"fact:{monster_id}:locations"
+        if any(slot.id == slot_id for slot in package.fact_slots):
+            continue
+        slot = not_applicable_fact(
+            next(entity for entity in entities if entity.id == monster_id), "locations"
         )
-
+        package.fact_slots.append(slot)
+        evidence_id = f"evidence:fact:{stable_part(slot.id)}"
+        package.evidence.append(
+            Schema5Evidence(
+                id=evidence_id,
+                source_locator_id=locator_id,
+                evidence_kind="derived",
+                transformation_rule="official-current-version-nonspawnable-monster-v1",
+                input_claim_id=monster_id,
+            )
+        )
+        package.claim_evidence.append(
+            Schema5ClaimEvidence(slot.id, evidence_id, "fact_slot")
+        )
+    entities_by_id = {entity.id: entity for entity in entities}
+    for monster_id in sorted(NON_COMBAT_MONSTER_DROP_IDS & monster_ids):
+        slot_id = f"fact:{monster_id}:drops"
+        if any(slot.id == slot_id for slot in package.fact_slots):
+            continue
+        locator_id = f"locator:official-rule:monster-drops:{stable_part(monster_id)}"
+        source_locators.setdefault(
+            locator_id,
+            Schema5SourceLocator(
+                id=locator_id,
+                source_document_id=source_id,
+                source_file="Stardew Valley.dll",
+                record_key="runtime-non-combat-monster-audit",
+            ),
+        )
+        slot = not_applicable_fact(entities_by_id[monster_id], "drops")
+        package.fact_slots.append(slot)
+        evidence_id = f"evidence:fact:{stable_part(slot.id)}"
+        package.evidence.append(
+            Schema5Evidence(
+                id=evidence_id,
+                source_locator_id=locator_id,
+                evidence_kind="derived",
+                transformation_rule="official-current-version-noncombat-monster-v1",
+                input_claim_id=monster_id,
+            )
+        )
+        package.claim_evidence.append(
+            Schema5ClaimEvidence(slot.id, evidence_id, "fact_slot")
+        )
 
 
 def add_purchase_offer_projections(
@@ -1219,6 +1332,7 @@ def add_weapon_acquisition_projections(
     source_documents: dict[str, Schema5SourceDocument],
     source_locators: dict[str, Schema5SourceLocator],
     game_version: str,
+    official_release_binding: tuple[str, str] | None,
 ) -> None:
     """Project auditable weapon acquisition methods from official rules.
 
@@ -1540,6 +1654,84 @@ def add_weapon_acquisition_projections(
             transformation_rule="official-monster-slayer-reward-to-weapon-acquisition-v1",
         )
         counters[entity_id] += 1
+
+    add_current_version_unobtainable_weapon_facts(
+        package,
+        weapons,
+        source_documents,
+        source_locators,
+        game_version,
+        official_release_binding,
+    )
+
+
+def add_current_version_unobtainable_weapon_facts(
+    package: Schema5Package,
+    weapons: dict[str, NormalizedEntity],
+    source_documents: dict[str, Schema5SourceDocument],
+    source_locators: dict[str, Schema5SourceLocator],
+    game_version: str,
+    official_release_binding: tuple[str, str] | None,
+) -> None:
+    """Bind the version-specific negative official-code audit to acquisition."""
+    expected_version, expected_dll_hash, expected_asset_hash = (
+        CURRENT_VERSION_UNOBTAINABLE_WEAPON_BINDING
+    )
+    if game_version != expected_version or official_release_binding != (
+        expected_dll_hash,
+        expected_asset_hash,
+    ):
+        return
+
+    source_id = "source:official-rule:current-version-unobtainable-weapons"
+    source_documents.setdefault(
+        source_id,
+        Schema5SourceDocument(
+            id=source_id,
+            source_kind="official_derived",
+            title="Stardew Valley.dll · current-version unobtainable weapon audit",
+            game_version=game_version,
+            content_hash=f"{expected_dll_hash}:{expected_asset_hash}",
+        ),
+    )
+    for weapon_id in sorted(CURRENT_VERSION_UNOBTAINABLE_WEAPON_IDS, key=int):
+        entity_id = f"weapon:{weapon_id}"
+        if entity_id not in weapons:
+            continue
+        slot_id = f"fact:{entity_id}:acquisition"
+        if any(slot.id == slot_id for slot in package.fact_slots):
+            continue
+        locator_id = (
+            "locator:official-rule:current-version-unobtainable-weapon:"
+            f"{weapon_id}"
+        )
+        source_locators.setdefault(
+            locator_id,
+            Schema5SourceLocator(
+                id=locator_id,
+                source_document_id=source_id,
+                source_file="Stardew Valley.dll",
+                record_key=(
+                    "official creation/shop/reward/chest/event audit excludes "
+                    f"weapon:{weapon_id}"
+                ),
+            ),
+        )
+        slot = not_applicable_fact(weapons[entity_id], "acquisition")
+        package.fact_slots.append(slot)
+        evidence_id = f"evidence:fact:{stable_part(slot.id)}"
+        package.evidence.append(
+            Schema5Evidence(
+                id=evidence_id,
+                source_locator_id=locator_id,
+                evidence_kind="derived",
+                transformation_rule="official-current-version-unobtainable-weapon-v1",
+                input_claim_id=entity_id,
+            )
+        )
+        package.claim_evidence.append(
+            Schema5ClaimEvidence(slot.id, evidence_id, "fact_slot")
+        )
 
 
 def _add_weapon_acquisition_item(
@@ -2107,7 +2299,12 @@ def add_machine_and_usage_projections(
                 )
 
     for entity_id, rows in sorted(references.used_in.items()):
-        for ordinal, reference in enumerate(sorted(rows, key=usage_reference_key)):
+        unique_rows = {
+            usage_projection_key(reference): reference for reference in rows
+        }
+        for ordinal, reference in enumerate(
+            sorted(unique_rows.values(), key=usage_reference_key)
+        ):
             usage_id = text_value(reference.get("usageId"))
             if usage_id is None:
                 continue
@@ -2193,6 +2390,48 @@ def usage_reference_key(reference: dict[str, object]) -> tuple[str, str]:
     return (str(reference.get("usageId") or ""), str(reference.get("usageType") or ""))
 
 
+def usage_projection_key(reference: dict[str, object]) -> tuple[str, str, str, str, str]:
+    """Deduplicate identical support rows before assigning fact-item ordinals."""
+    return (
+        *usage_reference_key(reference),
+        str(reference.get("quantity") or ""),
+        str(reference.get("quality") or ""),
+        str(reference.get("_source") or ""),
+    )
+
+
+def game_state_query_terms(
+    condition_id: str,
+    value: str,
+    ordinal: int,
+) -> tuple[list[Schema5ConditionTerm], list[str], bool]:
+    """Translate supported GameStateQuery clauses without evaluating a save."""
+    terms: list[Schema5ConditionTerm] = []
+    summaries: list[str] = []
+    for index, raw_clause in enumerate(value.split(",")):
+        clause = raw_clause.strip()
+        negated = clause.startswith("!")
+        display = clause[1:].strip() if negated else clause
+        predicate = display.split(maxsplit=1)[0] if display else ""
+        if not predicate or predicate not in GAME_STATE_QUERY_LABELS:
+            return [], [], False
+        label = GAME_STATE_QUERY_LABELS[predicate]
+        summaries.append(f"不满足{label}：{display}" if negated else f"{label}：{display}")
+        terms.append(
+            Schema5ConditionTerm(
+                id=(
+                    f"condition-term:{stable_part(condition_id)}:"
+                    f"game-state-query-{ordinal + index}"
+                ),
+                condition_set_id=condition_id,
+                ordinal=ordinal + index,
+                kind="game_state_query",
+                value_text=clause,
+            )
+        )
+    return terms, summaries, True
+
+
 def opaque_rule_condition(
     package: Schema5Package,
     condition_id: str,
@@ -2215,23 +2454,61 @@ def opaque_rule_condition(
         return None
     if any(condition.id == condition_id for condition in package.condition_sets):
         return condition_id
+
+    terms: list[Schema5ConditionTerm] = []
+    summaries: list[str] = []
+    complete = True
+    for key, value in sorted(fields.items()):
+        if key == "condition" and isinstance(value, str):
+            parsed, parsed_summaries, parsed_complete = game_state_query_terms(
+                condition_id, value, len(terms)
+            )
+            terms.extend(parsed)
+            summaries.extend(parsed_summaries)
+            complete &= parsed_complete
+            continue
+        if key == "requiredTags" and isinstance(value, list) and all(
+            isinstance(tag, str) and tag.strip() for tag in value
+        ):
+            text = ",".join(value)
+            terms.append(
+                Schema5ConditionTerm(
+                    id=f"condition-term:{stable_part(condition_id)}:required-tags",
+                    condition_set_id=condition_id,
+                    ordinal=len(terms),
+                    kind="required_tags",
+                    value_text=text,
+                )
+            )
+            summaries.append(f"输入标签：{text}")
+            continue
+        if (
+            key in {"requiredCount", "minDepth", "maxDepth", "minTime", "maxTime"}
+            and type(value) is int
+        ):
+            terms.append(
+                Schema5ConditionTerm(
+                    id=f"condition-term:{stable_part(condition_id)}:{stable_part(key)}",
+                    condition_set_id=condition_id,
+                    ordinal=len(terms),
+                    kind=key,
+                    value_integer=value,
+                )
+            )
+            summaries.append(f"{key}：{value}")
+            continue
+        complete = False
+
+    original_text = None if complete else json.dumps(fields, ensure_ascii=False, sort_keys=True)
     package.condition_sets.append(
         Schema5ConditionSet(
             id=condition_id,
-            completeness="opaque",
-            player_summary="官方规则受游戏条件限制",
-            original_text=json.dumps(fields, ensure_ascii=False, sort_keys=True),
+            completeness="complete" if complete else "opaque",
+            player_summary="；".join(summaries) or "官方规则受游戏条件限制",
+            original_text=original_text,
         )
     )
-    package.condition_terms.append(
-        Schema5ConditionTerm(
-            id=f"condition-term:{stable_part(condition_id)}:rule",
-            condition_set_id=condition_id,
-            ordinal=0,
-            kind="rule",
-            value_text=json.dumps(fields, ensure_ascii=False, sort_keys=True),
-        )
-    )
+    package.condition_terms.extend(terms)
     return condition_id
 
 
@@ -2245,10 +2522,22 @@ def ensure_support_fact_slot(
     transformation_rule: str,
     input_claim_id: str | None = None,
     status: str = "fixed",
+    condition_set_id: str | None = None,
 ) -> str:
     slot_id = f"fact:{entity_id}:{slot_key}"
     existing = next((slot for slot in package.fact_slots if slot.id == slot_id), None)
     if existing is not None:
+        # A fixed quote can coexist with another runtime-dependent quote. The
+        # fixed quote is the main answer; the dynamic offer remains in its
+        # companion ``*_price_rule`` slot. Upgrade the placeholder dynamic
+        # core slot so later integer quote items retain the typed contract.
+        if existing.status == "dynamic_rule" and status == "fixed":
+            package.fact_slots[package.fact_slots.index(existing)] = replace(
+                existing,
+                status="fixed",
+                value_type=value_type,
+                condition_set_id=condition_set_id,
+            )
         # A direct typed fact may legitimately coexist with conditional shop
         # offers; its status describes that direct answer, while each offer
         # item retains its own condition and scope.
@@ -2260,6 +2549,7 @@ def ensure_support_fact_slot(
             slot_key=slot_key,
             status=status,
             value_type=value_type,
+            condition_set_id=condition_set_id,
         )
     )
     evidence_id = f"evidence:fact-slot:{stable_part(slot_id)}"
@@ -2291,6 +2581,7 @@ def add_support_fact_item(
     transformation_rule: str,
     input_claim_id: str | None = None,
     status: str = "fixed",
+    fact_condition_set_id: str | None = None,
 ) -> Schema5FactItem:
     slot_id = ensure_support_fact_slot(
         package,
@@ -2301,6 +2592,7 @@ def add_support_fact_item(
         transformation_rule=transformation_rule,
         input_claim_id=input_claim_id,
         status=status,
+        condition_set_id=fact_condition_set_id,
     )
     item_id = f"fact-item:{entity_id}:{slot_key}:{stable_part(scope_id)}"
     fact_item = Schema5FactItem(
@@ -2487,6 +2779,68 @@ def out_of_season_price_rule(offer: dict[str, object]) -> str | None:
     return None
 
 
+def price_modifier_condition_terms(
+    condition_id: str,
+    key: str,
+    modifiers: object,
+    ordinal: int,
+) -> tuple[list[Schema5ConditionTerm], list[str], bool]:
+    """Represent official modifier rows without pretending random values are fixed."""
+    if not isinstance(modifiers, list) or not modifiers:
+        return [], [], False
+    terms: list[Schema5ConditionTerm] = []
+    summaries: list[str] = []
+    for index, modifier in enumerate(modifiers):
+        if not isinstance(modifier, dict):
+            return [], [], False
+        modification = modifier.get("Modification")
+        amount = modifier.get("Amount")
+        random_amount = modifier.get("RandomAmount")
+        condition = modifier.get("Condition")
+        if (
+            not isinstance(modification, str)
+            or not modification
+            or not isinstance(amount, int | float)
+            or isinstance(amount, bool)
+            or (
+                random_amount is not None
+                and (
+                    not isinstance(random_amount, list)
+                    or not all(
+                        isinstance(value, int | float) and not isinstance(value, bool)
+                        for value in random_amount
+                    )
+                )
+            )
+            or (condition is not None and not isinstance(condition, str))
+        ):
+            return [], [], False
+        terms.append(
+            Schema5ConditionTerm(
+                id=(
+                    f"condition-term:{stable_part(condition_id)}:"
+                    f"{stable_part(key)}-modifier-{index}"
+                ),
+                condition_set_id=condition_id,
+                ordinal=ordinal + len(terms),
+                kind="price_modifier",
+                value_text=json.dumps(modifier, ensure_ascii=False, sort_keys=True),
+            )
+        )
+        summaries.append(f"{key}价格修正：{modification}")
+        if random_amount:
+            summaries.append("价格修正随机取值")
+        if condition:
+            parsed, parsed_summaries, parsed_complete = game_state_query_terms(
+                condition_id, condition, ordinal + len(terms)
+            )
+            if not parsed_complete:
+                return [], [], False
+            terms.extend(parsed)
+            summaries.extend(parsed_summaries)
+    return terms, summaries, True
+
+
 def shop_condition(
     offer: dict[str, object],
     entity_id: str,
@@ -2508,27 +2862,53 @@ def shop_condition(
     if not fields:
         return None, []
     condition_id = f"condition:{entity_id}:{slot_prefix}:{stable_part(offer_key)}"
-    terms = [
-        Schema5ConditionTerm(
-            id=f"condition-term:{stable_part(condition_id)}:{stable_part(key)}",
-            condition_set_id=condition_id,
-            ordinal=ordinal,
-            kind="rule",
-            value_text=(
-                value
-                if isinstance(value, str)
-                else json.dumps(value, ensure_ascii=False, sort_keys=True)
-            ),
+    terms: list[Schema5ConditionTerm] = []
+    summaries: list[str] = []
+    complete = True
+    for key, value in sorted(fields.items()):
+        if key in {"condition", "perItemCondition"} and isinstance(value, str):
+            parsed, parsed_summaries, parsed_complete = game_state_query_terms(
+                condition_id, value, len(terms)
+            )
+            if parsed_complete:
+                terms.extend(parsed)
+                summaries.extend(parsed_summaries)
+                continue
+        if key in {"priceModifiers", "shopPriceModifiers"}:
+            parsed, parsed_summaries, parsed_complete = price_modifier_condition_terms(
+                condition_id, key, value, len(terms)
+            )
+            if parsed_complete:
+                terms.extend(parsed)
+                summaries.extend(parsed_summaries)
+                continue
+        complete = False
+        terms.append(
+            Schema5ConditionTerm(
+                id=f"condition-term:{stable_part(condition_id)}:{stable_part(key)}",
+                condition_set_id=condition_id,
+                ordinal=len(terms),
+                kind="rule",
+                value_text=(
+                    value
+                    if isinstance(value, str)
+                    else json.dumps(value, ensure_ascii=False, sort_keys=True)
+                ),
+            )
         )
-        for ordinal, (key, value) in enumerate(sorted(fields.items()))
-    ]
     return (
         Schema5ConditionSet(
             id=condition_id,
-            completeness="opaque",
-            player_summary="商店报价受游戏条件或价格规则限制",
-            original_text=json.dumps(
-                fields, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            completeness="complete" if complete else "opaque",
+            player_summary=(
+                "；".join(summaries)
+                if complete
+                else "商店报价受游戏条件或价格规则限制"
+            ),
+            original_text=(
+                None
+                if complete
+                else json.dumps(fields, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
             ),
         ),
         terms,
@@ -2710,12 +3090,20 @@ def fish_condition(
             text = value.strip()
             if not text:
                 continue
-            terms.append(
-                Schema5ConditionTerm(
-                    term_id, condition_id, len(terms), "rule", value_text=text
-                )
+            parsed, parsed_summaries, parsed_complete = game_state_query_terms(
+                condition_id, text, len(terms)
             )
-            summaries.append("游戏条件：另有未识别限制")
+            if parsed_complete:
+                terms.extend(parsed)
+                summaries.extend(parsed_summaries)
+            else:
+                terms.append(
+                    Schema5ConditionTerm(
+                        term_id, condition_id, len(terms), "rule", value_text=text
+                    )
+                )
+                summaries.append("游戏条件：另有未识别限制")
+                unparsed = True
         elif key == "chance" and isinstance(value, int | float) and not isinstance(value, bool):
             terms.append(
                 Schema5ConditionTerm(
@@ -2778,11 +3166,6 @@ def fish_condition(
     unknown = [key for key in fields if key not in recognized]
     if unknown or unparsed:
         completeness = "partial"
-        original_text = json.dumps(
-            fields, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        )
-    elif any(term.kind == "rule" for term in terms):
-        completeness = "opaque"
         original_text = json.dumps(
             fields, ensure_ascii=False, sort_keys=True, separators=(",", ":")
         )
@@ -2977,7 +3360,7 @@ def add_drop_projections(
         if ":" in monster_id:
             monster_id = monster_id.split(":", 1)[1]
         monster_id = f"monster:{monster_id.replace(' ', '-')}"
-        if monster_id in by_id:
+        if monster_id in by_id and monster_id not in NON_COMBAT_MONSTER_DROP_IDS:
             drops_by_monster[monster_id].append(drop)
     for monster_id, drops in sorted(drops_by_monster.items()):
         for ordinal, drop in enumerate(sorted(drops, key=lambda item: item.id)):
@@ -3033,7 +3416,10 @@ def add_inline_drop_projections(
 ) -> None:
     """Project structured monster drops when the source is a mapping record."""
     for monster in entities:
-        if monster.entity_type != "monster":
+        if (
+            monster.entity_type != "monster"
+            or monster.id in NON_COMBAT_MONSTER_DROP_IDS
+        ):
             continue
         attributes = structured_attributes(monster)
         locations = join_text(attributes.get("Locations"))

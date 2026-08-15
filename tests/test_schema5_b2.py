@@ -180,6 +180,54 @@ def test_b2_rejects_fixed_fact_with_partial_condition() -> None:
         validate_schema5_package(package, publishable=False)
 
 
+def test_b2_rejects_dynamic_fact_without_explanatory_rule() -> None:
+    package = b2_package()
+    package.fact_slots[0] = replace(
+        package.fact_slots[0],
+        status="dynamic_rule",
+        text_value=None,
+    )
+
+    with pytest.raises(ValueError, match="动态事实缺少可解释规则"):
+        validate_schema5_package(package, publishable=False)
+
+
+def test_b2_allows_dynamic_fact_with_companion_rule() -> None:
+    package = b2_package()
+    package.fact_slots[0] = replace(
+        package.fact_slots[0],
+        status="dynamic_rule",
+        text_value=None,
+    )
+    package.fact_slots.append(
+        Schema5FactSlot(
+            id="fact:object:1:name_rule",
+            entity_id="object:1",
+            slot_key="name_rule",
+            status="dynamic_rule",
+            value_type="text",
+            text_value="按运行时规则确定",
+        )
+    )
+    package.evidence.append(
+        Schema5Evidence(
+            id="evidence:object:1:name-rule",
+            source_locator_id="locator:data-objects:1",
+            evidence_kind="derived",
+            transformation_rule="official-runtime-rule-v1",
+            input_claim_id="fact:object:1:name",
+        )
+    )
+    package.claim_evidence.append(
+        Schema5ClaimEvidence(
+            claim_id="fact:object:1:name_rule",
+            evidence_id="evidence:object:1:name-rule",
+            claim_type="fact_slot",
+        )
+    )
+    validate_schema5_package(package, publishable=False)
+
+
 def test_b2_rejects_publishable_fact_without_evidence() -> None:
     package = b2_package()
     package.claim_evidence = package.claim_evidence[:1]
