@@ -736,6 +736,14 @@ def add_purchase_offer_projections(
     game_version: str,
     locators_by_entity: dict[str, str],
 ) -> None:
+    """Project official shop offers without turning sale prices into purchase prices.
+
+    ``ShopBuilder.GetBasePrice`` starts from an explicit offer price, otherwise
+    uses either object-data ``Price`` (only when requested) or the runtime
+    sale-price rule.  The latter, profit margins, random modifier amounts and
+    conditional modifiers cannot always be evaluated from static JSON, so they
+    become an explicit dynamic rule instead of an invented coin price.
+    """
     by_id = {entity.id: entity for entity in entities}
     resolver = ItemReferenceResolver.create(by_id)
     indexed_offers: dict[str, list[dict[str, object]]] = defaultdict(list)
@@ -748,36 +756,40 @@ def add_purchase_offer_projections(
     )
     source_documents[source.id] = source
     for entity in entities:
+        slot_prefix = "seed_purchase" if entity.entity_type == "crop" else "purchase"
         offers = list(indexed_offers.get(entity.id, ()))
+        price_target = entity
+        seed_entity_id: str | None = None
         if entity.entity_type == "crop":
-            seed_id = structured_attributes(entity).get("SeedItemId")
-            for seed_entity_id in resolver.resolve(seed_id):
+            # Crops are keyed by harvest item in Crops.json; their buyable
+            # entity is the explicitly linked seed object, never a coincident
+            # crop key or another random offer candidate.
+            seed_entity_id = stable_item_reference(
+                structured_attributes(entity).get("SeedItemId"), by_id
+            )
+            if seed_entity_id is not None:
                 offers.extend(indexed_offers.get(seed_entity_id, ()))
+                price_target = by_id[seed_entity_id]
         if not offers:
             if entity.entity_type == "crop":
-                ensure_not_applicable_purchase_slot(
+                ensure_missing_purchase_slot(
                     package,
                     entity,
                     "seed_purchase_price",
                     locators_by_entity.get(entity.id),
+                    "not_applicable" if seed_entity_id is not None else "not_collected",
                 )
             elif entity.entity_type in {"big_craftable", "tool", "weapon"}:
                 ensure_not_applicable_purchase_slot(
-                    package,
-                    entity,
-                    "purchase_price",
-                    locators_by_entity.get(entity.id),
+                    package, entity, "purchase_price", locators_by_entity.get(entity.id)
                 )
             continue
-        slot_prefix = "seed_purchase" if entity.entity_type == "crop" else "purchase"
+
         sorted_offers = sorted(offers, key=shop_offer_key)
         offer_keys = [shop_offer_key(offer) for offer in sorted_offers]
         if len(offer_keys) != len(set(offer_keys)):
             raise ValueError(f"商店报价缺少可区分稳定键：{entity.id}")
-        price_written = any(
-            slot.entity_id == entity.id and slot.slot_key == f"{slot_prefix}_price"
-            for slot in package.fact_slots
-        )
+        coin_price_written = False
         for ordinal, (offer_key, offer) in enumerate(zip(offer_keys, sorted_offers, strict=True)):
             scope_id = f"offer:{stable_part(offer_key)}"
             locator = Schema5SourceLocator(
@@ -788,118 +800,91 @@ def add_purchase_offer_projections(
                 record_key=str(offer_key),
             )
             source_locators[locator.id] = locator
-            condition_id = None
             condition, condition_terms = shop_condition(offer, entity.id, slot_prefix, offer_key)
+            condition_id = condition.id if condition is not None else None
             if condition is not None:
-                condition_id = condition.id
                 package.condition_sets.append(condition)
                 package.condition_terms.extend(condition_terms)
-            price = offer.get("price")
-            input_claim_id = None
-            if price == -1 and offer.get("tradeItemId") is None:
-                price_entity_id = stable_entity_reference(offer.get("itemId"), by_id)
-                price_entity = by_id.get(price_entity_id) if price_entity_id else None
-                derived_price = (
-                    structured_attributes(price_entity).get("Price")
-                    if price_entity is not None
-                    else None
-                )
-                if (
-                    isinstance(derived_price, int)
-                    and not isinstance(derived_price, bool)
-                    and derived_price >= 0
-                ):
-                    price = apply_shop_price_modifiers(derived_price, offer)
-                    input_claim_id = price_entity_id
-            if isinstance(price, int) and not isinstance(price, bool) and price >= 0:
-                price_item = add_support_fact_item(
-                    package,
-                    entity.id,
-                    f"{slot_prefix}_price",
-                    "integer",
-                    integer_value=price,
-                    scope_id=scope_id,
-                    condition_set_id=condition_id,
-                    ordinal=ordinal,
-                    locator_id=locator.id,
-                    transformation_rule="official-shops-to-player-facts-v1",
-                    input_claim_id=input_claim_id,
-                )
-                price_written = True
-                add_support_facet(
-                    package,
-                    entity_id=entity.id,
-                    family=f"{slot_prefix}_price",
-                    item=price_item,
-                    condition_set_id=condition_id,
-                    locator_id=locator.id,
-                    transformation_rule="official-shops-to-player-facts-v1",
-                )
+
             currency = currency_label(offer.get("currency"))
             if currency is not None:
                 add_support_fact_item(
-                    package,
-                    entity.id,
-                    f"{slot_prefix}_currency",
-                    "text",
-                    text_value=currency,
-                    scope_id=scope_id,
-                    condition_set_id=condition_id,
-                    ordinal=ordinal,
-                    locator_id=locator.id,
+                    package, entity.id, f"{slot_prefix}_currency", "text",
+                    text_value=currency, scope_id=scope_id, condition_set_id=condition_id,
+                    ordinal=ordinal, locator_id=locator.id,
                     transformation_rule="official-shops-to-player-facts-v1",
                 )
+            price = resolve_shop_offer_price(offer, price_target, by_id)
+            diagnostic = {
+                "shopId": offer.get("shopId"),
+                "offerKey": offer_key,
+                "entityId": entity.id,
+                "scopeId": scope_id,
+                "currency": currency,
+                "conditioned": condition_id is not None,
+                **price,
+            }
+            dynamic_reason = out_of_season_price_rule(offer)
+            if dynamic_reason is not None:
+                diagnostic["dynamicRule"] = dynamic_reason
+            package.shop_price_diagnostics.append(diagnostic)
+            if price["kind"] == "coin" and currency == "金币":
+                price_item = add_support_fact_item(
+                    package, entity.id, f"{slot_prefix}_price", "integer",
+                    integer_value=price["value"], scope_id=scope_id,
+                    condition_set_id=condition_id, ordinal=ordinal, locator_id=locator.id,
+                    transformation_rule="official-shop-builder-get-base-price-v1",
+                    input_claim_id=price.get("inputClaimId"),
+                )
+                coin_price_written = True
+                add_support_facet(
+                    package, entity_id=entity.id, family=f"{slot_prefix}_price",
+                    item=price_item, condition_set_id=condition_id, locator_id=locator.id,
+                    transformation_rule="official-shop-builder-get-base-price-v1",
+                )
+                if dynamic_reason is not None:
+                    add_dynamic_price_rule(
+                        package, entity.id, slot_prefix, scope_id, condition_id, ordinal,
+                        locator.id, dynamic_reason, price.get("inputClaimId"),
+                    )
+            elif price["kind"] == "currency_amount" and currency is not None:
+                add_support_fact_item(
+                    package, entity.id, f"{slot_prefix}_currency_amount", "integer",
+                    integer_value=price["value"], scope_id=scope_id,
+                    condition_set_id=condition_id, ordinal=ordinal, locator_id=locator.id,
+                    transformation_rule="official-shop-builder-get-base-price-v1",
+                    input_claim_id=price.get("inputClaimId"),
+                )
+            elif price["kind"] == "dynamic":
+                add_dynamic_price_rule(
+                    package, entity.id, slot_prefix, scope_id, condition_id, ordinal,
+                    locator.id, str(price["reason"]), price.get("inputClaimId"),
+                )
+
             trade_item = offer.get("tradeItemId")
             resolved_trade_items = resolver.resolve(trade_item)
             trade_amount = offer.get("tradeItemAmount")
             if len(resolved_trade_items) == 1:
                 add_support_fact_item(
-                    package,
-                    entity.id,
-                    f"{slot_prefix}_exchange_item_id",
-                    "text",
-                    text_value=resolved_trade_items[0],
-                    scope_id=scope_id,
-                    condition_set_id=condition_id,
-                    ordinal=ordinal,
-                    locator_id=locator.id,
+                    package, entity.id, f"{slot_prefix}_exchange_item_id", "text",
+                    text_value=resolved_trade_items[0], scope_id=scope_id,
+                    condition_set_id=condition_id, ordinal=ordinal, locator_id=locator.id,
                     transformation_rule="official-shops-to-player-facts-v1",
                 )
                 if isinstance(trade_amount, int) and not isinstance(trade_amount, bool):
                     add_support_fact_item(
-                        package,
-                        entity.id,
-                        f"{slot_prefix}_exchange_amount",
-                        "integer",
-                        integer_value=trade_amount,
-                        scope_id=scope_id,
-                        condition_set_id=condition_id,
-                        ordinal=ordinal,
-                        locator_id=locator.id,
+                        package, entity.id, f"{slot_prefix}_exchange_amount", "integer",
+                        integer_value=trade_amount, scope_id=scope_id,
+                        condition_set_id=condition_id, ordinal=ordinal, locator_id=locator.id,
                         transformation_rule="official-shops-to-player-facts-v1",
                     )
-        if entity.entity_type == "crop" and not price_written:
-            ensure_not_applicable_purchase_slot(
-                package,
-                entity,
-                "seed_purchase_price",
-                locators_by_entity.get(entity.id),
+        if entity.entity_type == "crop" and not coin_price_written:
+            ensure_not_collected_purchase_slot(
+                package, entity, "seed_purchase_price", locators_by_entity.get(entity.id)
             )
-        elif entity.entity_type in {"big_craftable", "tool", "weapon"} and not price_written:
-            offer_locator_id = next(
-                (
-                    locator.id
-                    for locator in source_locators.values()
-                    if locator.source_file == "Data/Shops.json"
-                    and locator.record_key in set(offer_keys)
-                ),
-                None,
-            )
-            ensure_not_applicable_purchase_slot(
-                package,
-                entity,
-                "purchase_price",
-                offer_locator_id or locators_by_entity.get(entity.id),
+        elif entity.entity_type in {"big_craftable", "tool", "weapon"} and not coin_price_written:
+            ensure_not_collected_purchase_slot(
+                package, entity, "purchase_price", locators_by_entity.get(entity.id)
             )
 
 
@@ -1394,40 +1379,283 @@ def ensure_not_applicable_purchase_slot(
     slot_key: str,
     locator_id: str | None,
 ) -> None:
+    ensure_missing_purchase_slot(package, entity, slot_key, locator_id, "not_applicable")
+
+
+def ensure_not_collected_purchase_slot(
+    package: Schema5Package,
+    entity: NormalizedEntity,
+    slot_key: str,
+    locator_id: str | None,
+) -> None:
+    ensure_missing_purchase_slot(package, entity, slot_key, locator_id, "not_collected")
+
+
+def ensure_missing_purchase_slot(
+    package: Schema5Package,
+    entity: NormalizedEntity,
+    slot_key: str,
+    locator_id: str | None,
+    status: str,
+) -> None:
     if locator_id is None or any(
         slot.id == f"fact:{entity.id}:{slot_key}" for slot in package.fact_slots
     ):
         return
-    fact = not_applicable_fact(entity, slot_key)
-    package.fact_slots.append(fact)
-    package.claim_evidence.append(direct_claim(fact.id, "fact_slot", locator_id, package))
+    package.fact_slots.append(
+        Schema5FactSlot(
+            id=f"fact:{entity.id}:{slot_key}",
+            entity_id=entity.id,
+            slot_key=slot_key,
+            status=status,
+        )
+    )
+    package.claim_evidence.append(
+        direct_claim(f"fact:{entity.id}:{slot_key}", "fact_slot", locator_id, package)
+    )
 
 
-def apply_shop_price_modifiers(price: int, offer: dict[str, object]) -> int:
-    """Apply deterministic item/shop markup already materialized on an offer.
+def resolve_shop_offer_price(
+    offer: dict[str, object],
+    target: NormalizedEntity,
+    by_id: dict[str, NormalizedEntity],
+) -> dict[str, object]:
+    """Mirror the statically knowable part of ``ShopBuilder.GetBasePrice``.
 
-    The official shop data uses ``Price=-1`` for object-data prices.  Its
-    ``shopPriceModifiers`` are still part of the published offer contract, so
-    deriving only the base object price would report a player-facing price that
-    is too low.  Conditional modifiers stay in the offer condition set and are
-    not applied here because the static package cannot evaluate them.
+    The game first uses the offer price (defaulting to ``-1``), then maps a
+    negative price to zero for a trade, object-data ``Price`` only when the
+    explicit flag requests it, or the runtime item's sale-price rule.  Shop
+    modifiers run first unless explicitly ignored; item modifiers run second.
+    Any runtime-dependent branch remains a typed dynamic rule, never an
+    object sale price disguised as a purchase price.
     """
-    modifiers = offer.get("shopPriceModifiers")
-    if not isinstance(modifiers, list):
-        return price
-    result = float(price)
+    trade_item = offer.get("tradeItemId")
+    raw_price = offer.get("price", -1)
+    if not isinstance(raw_price, int) or isinstance(raw_price, bool):
+        return {"kind": "dynamic", "reason": "invalid-or-missing-price"}
+    input_claim_id: str | None = None
+    if raw_price < 0:
+        if trade_item is not None:
+            # GetBasePrice yields zero for a negative-price trade, then the
+            # same shop/item modifier chain still runs. A zero result is only
+            # the exchange cost; a positive modifier result is a separate
+            # coin component of that same scoped offer.
+            raw_price = 0
+        elif offer.get("useObjectDataPrice") is True:
+            object_id = object_price_entity_id(target, by_id)
+            object_entity = by_id.get(object_id) if object_id else None
+            object_price = (
+                structured_attributes(object_entity).get("Price")
+                if object_entity is not None
+                else None
+            )
+            if isinstance(object_price, int) and not isinstance(object_price, bool):
+                raw_price = object_price
+                input_claim_id = object_id
+            else:
+                return {
+                    "kind": "dynamic",
+                    "reason": "object-data-price-unresolved",
+                    "inputClaimId": object_id,
+                }
+        else:
+            object_id = object_price_entity_id(target, by_id)
+            object_entity = by_id.get(object_id) if object_id else None
+            runtime_price = runtime_object_sale_price(object_entity)
+            if runtime_price is None:
+                return {
+                    "kind": "dynamic",
+                    "reason": "runtime-sale-price",
+                    "inputClaimId": object_id,
+                }
+            raw_price = runtime_price
+            input_claim_id = object_id
+
+    if requires_runtime_profit_margin(offer, target, by_id):
+        return {
+            "kind": "dynamic",
+            "reason": "runtime-profit-margin",
+            "inputClaimId": input_claim_id,
+        }
+    modifiers = active_shop_price_modifiers(offer)
+    if modifiers is None:
+        return {
+            "kind": "dynamic",
+            "reason": "conditional-or-random-price-modifier",
+            "inputClaimId": input_claim_id,
+        }
+    adjusted = apply_price_modifiers(
+        float(raw_price), modifiers["shop"], str(offer.get("shopPriceModifierMode") or "Stack")
+    )
+    adjusted = apply_price_modifiers(
+        adjusted, modifiers["item"], str(offer.get("priceModifierMode") or "Stack")
+    )
+    if adjusted is None:
+        return {
+            "kind": "dynamic",
+            "reason": "unsupported-price-modifier",
+            "inputClaimId": input_claim_id,
+        }
+    value = int(adjusted)
+    currency = currency_label(offer.get("currency"))
+    exchange_only = trade_item is not None and value == 0
+    return {
+        "kind": (
+            "exchange_only"
+            if exchange_only
+            else ("coin" if currency == "金币" else "currency_amount")
+        ),
+        "value": value,
+        "inputClaimId": input_claim_id,
+        "reason": "trade-item-cost" if exchange_only else "static-official-shop-price",
+        "appliedShopModifiers": len(modifiers["shop"]),
+        "appliedItemModifiers": len(modifiers["item"]),
+    }
+
+
+def runtime_object_sale_price(target: NormalizedEntity | None) -> int | None:
+    """Evaluate Object.salePrice(true) only for its stable, ordinary branch."""
+    if target is None or target.entity_type != "object":
+        return None
+    price = structured_attributes(target).get("Price")
+    if not isinstance(price, int) or isinstance(price, bool):
+        return None
+    # Object.salePrice contains item-ID, fence and recipe branches that cannot
+    # be proven from Shops/Objects alone. Keep those dynamic rather than guess.
+    if target.game_id in {"378", "380", "382", "384", "388", "390"}:
+        return None
+    if structured_attributes(target).get("IsRecipe") is True:
+        return None
+    return price * 2
+
+
+def requires_runtime_profit_margin(
+    offer: dict[str, object],
+    target: NormalizedEntity,
+    by_id: dict[str, NormalizedEntity],
+) -> bool:
+    explicit = offer.get("itemApplyProfitMargins")
+    if explicit is None:
+        explicit = offer.get("shopApplyProfitMargins")
+    if explicit is True:
+        return True
+    if explicit is False:
+        return False
+    object_id = object_price_entity_id(target, by_id)
+    object_entity = by_id.get(object_id) if object_id else None
+    return (
+        object_entity is not None
+        and structured_attributes(object_entity).get("Category") == -74
+    )
+
+
+def object_price_entity_id(
+    target: NormalizedEntity,
+    by_id: dict[str, NormalizedEntity],
+) -> str | None:
+    """Use the offer target's Object row, never a sibling random candidate."""
+    candidate = f"object:{target.game_id}" if target.game_id else ""
+    return candidate if candidate in by_id else None
+
+
+def active_shop_price_modifiers(
+    offer: dict[str, object],
+) -> dict[str, list[dict[str, object]]] | None:
+    shop = [] if offer.get("ignoreShopPriceModifiers") is True else modifier_rows(
+        offer.get("shopPriceModifiers")
+    )
+    item = modifier_rows(offer.get("priceModifiers"))
+    if shop is None or item is None:
+        return None
+    return {"shop": shop, "item": item}
+
+
+def modifier_rows(value: object) -> list[dict[str, object]] | None:
+    if value in (None, []):
+        return []
+    if not isinstance(value, list):
+        return None
+    rows: list[dict[str, object]] = []
+    for modifier in value:
+        if not isinstance(modifier, dict):
+            return None
+        if (
+            modifier.get("Condition") not in (None, "")
+            or modifier.get("RandomAmount") not in (None, [])
+        ):
+            return None
+        amount = modifier.get("Amount")
+        if not isinstance(amount, int | float) or isinstance(amount, bool):
+            return None
+        rows.append(modifier)
+    return rows
+
+
+def apply_price_modifiers(
+    value: float,
+    modifiers: list[dict[str, object]],
+    mode: str,
+) -> float | None:
+    """Reproduce ``Utility.ApplyQuantityModifiers`` for static modifier rows."""
+    selected: float | None = None
     for modifier in modifiers:
-        if not isinstance(modifier, dict) or modifier.get("Condition") not in (None, ""):
-            continue
-        if modifier.get("Modification") == "Multiply":
-            amount = modifier.get("Amount")
-            if isinstance(amount, int | float) and not isinstance(amount, bool):
-                result *= amount
-        elif modifier.get("Modification") == "Add":
-            amount = modifier.get("Amount")
-            if isinstance(amount, int | float) and not isinstance(amount, bool):
-                result += amount
-    return int(result)
+        # Utility uses the original base for Minimum/Maximum, but chains Stack.
+        base = (
+            value
+            if mode in {"Minimum", "Maximum"}
+            else (selected if selected is not None else value)
+        )
+        candidate = apply_price_modifier(base, modifier)
+        if candidate is None:
+            return None
+        if mode == "Minimum":
+            selected = candidate if selected is None else min(selected, candidate)
+        elif mode == "Maximum":
+            selected = candidate if selected is None else max(selected, candidate)
+        else:
+            selected = candidate
+    return value if selected is None else selected
+
+
+def apply_price_modifier(value: float, modifier: dict[str, object]) -> float | None:
+    amount = float(modifier["Amount"])
+    operation = modifier.get("Modification")
+    if operation == "Add":
+        return value + amount
+    if operation == "Multiply":
+        return value * amount
+    if operation == "Divide" and amount != 0:
+        return value / amount
+    if operation in {"Set", "Override"}:
+        return amount
+    return None
+
+
+def add_dynamic_price_rule(
+    package: Schema5Package,
+    entity_id: str,
+    slot_prefix: str,
+    scope_id: str,
+    condition_set_id: str | None,
+    ordinal: int,
+    locator_id: str,
+    reason: str,
+    input_claim_id: object,
+) -> None:
+    add_support_fact_item(
+        package,
+        entity_id,
+        f"{slot_prefix}_price_rule",
+        "text",
+        text_value=reason,
+        scope_id=scope_id,
+        condition_set_id=condition_set_id,
+        ordinal=ordinal,
+        locator_id=locator_id,
+        transformation_rule="official-shop-builder-dynamic-price-rule-v1",
+        input_claim_id=str(input_claim_id) if input_claim_id else None,
+        status="dynamic_rule",
+    )
 
 
 def add_machine_and_usage_projections(
@@ -1656,16 +1884,21 @@ def ensure_support_fact_slot(
     locator_id: str,
     transformation_rule: str,
     input_claim_id: str | None = None,
+    status: str = "fixed",
 ) -> str:
     slot_id = f"fact:{entity_id}:{slot_key}"
-    if any(slot.id == slot_id for slot in package.fact_slots):
+    existing = next((slot for slot in package.fact_slots if slot.id == slot_id), None)
+    if existing is not None:
+        # A direct typed fact may legitimately coexist with conditional shop
+        # offers; its status describes that direct answer, while each offer
+        # item retains its own condition and scope.
         return slot_id
     package.fact_slots.append(
         Schema5FactSlot(
             id=slot_id,
             entity_id=entity_id,
             slot_key=slot_key,
-            status="fixed",
+            status=status,
             value_type=value_type,
         )
     )
@@ -1697,6 +1930,7 @@ def add_support_fact_item(
     locator_id: str,
     transformation_rule: str,
     input_claim_id: str | None = None,
+    status: str = "fixed",
 ) -> Schema5FactItem:
     slot_id = ensure_support_fact_slot(
         package,
@@ -1706,6 +1940,7 @@ def add_support_fact_item(
         locator_id=locator_id,
         transformation_rule=transformation_rule,
         input_claim_id=input_claim_id,
+        status=status,
     )
     item_id = f"fact-item:{entity_id}:{slot_key}:{stable_part(scope_id)}"
     fact_item = Schema5FactItem(
@@ -1864,6 +2099,9 @@ def shop_offer_key(offer: dict[str, object]) -> str:
 
 
 def currency_label(value: object) -> str | None:
+    # ShopData defaults Currency to money when the JSON omits the field.
+    if value is None:
+        return "金币"
     labels = {
         "0": "金币",
         "1": "星星币",
@@ -1877,6 +2115,18 @@ def currency_label(value: object) -> str | None:
     return labels.get(str(value)) if value is not None else None
 
 
+def out_of_season_price_rule(offer: dict[str, object]) -> str | None:
+    """Expose ShopBuilder's SeedShop/PierreStocklist 1.5× runtime branch."""
+    condition = offer.get("condition")
+    if (
+        offer.get("shopId") == "SeedShop"
+        and isinstance(condition, str)
+        and "SEASON" in condition.upper()
+    ):
+        return "out-of-season-price-rule"
+    return None
+
+
 def shop_condition(
     offer: dict[str, object],
     entity_id: str,
@@ -1885,9 +2135,16 @@ def shop_condition(
 ) -> tuple[Schema5ConditionSet | None, list[Schema5ConditionTerm]]:
     fields = {
         key: offer[key]
-        for key in ("condition", "perItemCondition", "priceModifiers", "shopPriceModifiers")
+        for key in ("condition", "perItemCondition")
         if offer.get(key) not in (None, "", [], {})
     }
+    # Static modifier rows have already been applied in the same order as the
+    # runtime builder and do not make the result conditional. Retain only
+    # modifiers that depend on a game state or random draw as quote rules.
+    for key in ("priceModifiers", "shopPriceModifiers"):
+        modifiers = offer.get(key)
+        if has_dynamic_price_modifier(modifiers):
+            fields[key] = modifiers
     if not fields:
         return None, []
     condition_id = f"condition:{entity_id}:{slot_prefix}:{stable_part(offer_key)}"
@@ -1915,6 +2172,17 @@ def shop_condition(
             ),
         ),
         terms,
+    )
+
+
+def has_dynamic_price_modifier(value: object) -> bool:
+    if not isinstance(value, list):
+        return value not in (None, [])
+    return any(
+        not isinstance(modifier, dict)
+        or modifier.get("Condition") not in (None, "")
+        or modifier.get("RandomAmount") not in (None, [])
+        for modifier in value
     )
 
 

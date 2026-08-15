@@ -94,6 +94,39 @@ def test_formal_schema5_candidate_writes_publishable_package_and_typed_database(
     assert not (output / ".release-blocked.json").exists()
     assert (output / "schema5-conformance.json").exists()
     assert (output / "stardew-zh-cn.svdata").exists()
+    diagnostics = json.loads(
+        (output / "reports" / "shop-price-diagnostics.json").read_text(encoding="utf-8")
+    )
+    assert diagnostics == [
+        {
+            "shopId": "SeedShop",
+            "offerKey": "shop:SeedShop:offer:parsnip-seeds",
+            "entityId": "crop:24",
+            "scopeId": "offer:shop:SeedShop:offer:parsnip-seeds",
+            "currency": "金币",
+            "conditioned": False,
+            "kind": "coin",
+            "value": 20,
+            "inputClaimId": None,
+            "reason": "static-official-shop-price",
+            "appliedShopModifiers": 0,
+            "appliedItemModifiers": 0,
+        },
+        {
+            "shopId": "SeedShop",
+            "offerKey": "shop:SeedShop:offer:parsnip-seeds",
+            "entityId": "object:24",
+            "scopeId": "offer:shop:SeedShop:offer:parsnip-seeds",
+            "currency": "金币",
+            "conditioned": False,
+            "kind": "coin",
+            "value": 20,
+            "inputClaimId": None,
+            "reason": "static-official-shop-price",
+            "appliedShopModifiers": 0,
+            "appliedItemModifiers": 0,
+        },
+    ]
     with sqlite3.connect(output / "stardew.db") as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
         assert connection.execute("PRAGMA quick_check").fetchone()[0] == "ok"
@@ -159,7 +192,9 @@ def test_failed_candidate_is_removed_after_next_successful_build(tmp_path: Path)
     assert failed.exit_code == 1
     assert not output.exists()
     assert (tmp_path / "candidate.previous").is_dir()
-    assert (tmp_path / "candidate.failed" / ".release-blocked.json").exists()
+    failed_output = tmp_path / "candidate.failed"
+    assert (failed_output / ".release-blocked.json").exists()
+    assert (failed_output / "reports" / "shop-price-diagnostics.json").exists()
 
     enrich_fixture_entries(unpacked)
     succeeded = runner.invoke(

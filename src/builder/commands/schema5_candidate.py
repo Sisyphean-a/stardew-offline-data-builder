@@ -99,6 +99,7 @@ def build_schema5_candidate_command(
                     support=official.support,
                     support_entities=formal_entities,
                 )
+                write_shop_price_diagnostics(staging_dir, candidate)
                 ensure_core_fact_slots(candidate)
                 release_coverage = validate_release_coverage(candidate)
                 validate_regression_budget(output_dir, release_coverage, candidate)
@@ -204,6 +205,19 @@ def reject_legacy_only_inputs(entities: list[NormalizedEntity]) -> None:
             raise ValueError(f"schema 5 正式候选拒绝 legacy 输入：{entity.id}")
 
 
+def write_shop_price_diagnostics(output_dir: Path, candidate: Schema5Package) -> None:
+    """Persist offer-level audit rows before coverage can reject the candidate."""
+    reports_dir = output_dir / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    dump_json_file(
+        reports_dir / "shop-price-diagnostics.json",
+        sorted(
+            candidate.shop_price_diagnostics,
+            key=lambda row: (str(row.get("entityId")), str(row.get("offerKey"))),
+        ),
+    )
+
+
 def bind_schema5_artifacts(output_dir: Path) -> None:
     manifest_path = output_dir / "manifest.json"
     manifest = load_json_file(manifest_path)
@@ -221,9 +235,23 @@ def typed_coverage(package: Schema5Package) -> dict[str, object]:
         status_counts[slot.status] = status_counts.get(slot.status, 0) + 1
         key = f"{entities.get(slot.entity_id, 'unknown')}:{slot.slot_key}:{slot.status}"
         by_type[key] = by_type.get(key, 0) + 1
+    quote_kinds: dict[str, int] = {}
+    quote_reasons: dict[str, int] = {}
+    for diagnostic in package.shop_price_diagnostics:
+        kind = str(diagnostic.get("kind", "unknown"))
+        quote_kinds[kind] = quote_kinds.get(kind, 0) + 1
+        reason = diagnostic.get("reason")
+        if reason is not None:
+            text = str(reason)
+            quote_reasons[text] = quote_reasons.get(text, 0) + 1
     return {
         "factSlots": status_counts,
         "factSlotsByType": dict(sorted(by_type.items())),
+        "shopPrices": {
+            "offers": len(package.shop_price_diagnostics),
+            "byKind": dict(sorted(quote_kinds.items())),
+            "byReason": dict(sorted(quote_reasons.items())),
+        },
         "conditions": {
             "complete": sum(
                 condition.completeness == "complete" for condition in package.condition_sets

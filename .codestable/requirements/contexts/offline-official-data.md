@@ -54,7 +54,7 @@ _避免_：继续把 `officialDerived`、任意 JSON、空值或缺失行交给�
 - `entity_cards` 和搜索文档只从规范实体与事实生成名称、别名、拼音和经审核的地点、水域、用途、获得方式、自然语言类别及最多两组行动摘要，并保留稳定命中类型；原始 ID、枚举、条件原文和高基数关系不能作为普通搜索词污染结果。
 - `browse_facets` 使用版本化白名单和稳定 `scope_family + scope_id`。属于同一报价、捕获、出现、掉落或获得规则的地点、季节、时间、天气、价格与条件共享 scope，允许同维度 OR、跨维度 AND 而不拼接不同规则。facet 值记录类型/区间/单位、claim 状态、条件集合和完整性；未知、暂未收录、不适用只记录 facet family 状态，不生成具体值。
 - builder 为实体名称/类型、搜索前缀、facet 文本/区间、稳定排序以及 `relations(subject,predicate,object)` 的正反查询生成并验证索引。反向索引只支持有证据的已发布关系，不生成反向事实；购买价、出售价格和兑换成本保持不同值域。
-- `Data/Shops.json`、`Locations.json`、`FishPondData.json`、`Machines.json` 等支持资产只用于官方跨表关联，不独立伪造实体事实。
+- `Data/Shops.json`、`Locations.json`、`FishPondData.json`、`Machines.json` 等支持资产只用于官方跨表关联，不独立伪造实体事实。商店金币报价按 `StardewValley.Internal.ShopBuilder.GetBasePrice` 的顺序从 `Price`、负价回退、`UseObjectDataPrice`/对象价格、利润边际与 shop/item modifier 推导；`IgnoreShopPriceModifiers` 只跳过 shop 层。可静态计算的金币额与物品兑换成本分槽、同报价 scope 和条件绑定；运行时出售价、利润边际、随机或条件 modifier 只发布 `dynamic_rule`，绝不用对象出售价伪装购买价。crop 的 `SeedItemId` 只稳定关联 `object:<seed-id>`；有官方报价但没有普通静态金币额为 `not_collected`，没有报价才是 `not_applicable`。
 - 成就、鞋类、大型可制作物和家具等旧格式需要按有版本的官方视觉规则建立唯一图片来源、裁切矩形或 sprite 元数据；来源规范化碰撞、图集缺少确定裁切、裁切越界、资源缺失、无法解码、无效尺寸和全透明必须构成质量错误。发布清单绑定实体 ID、路径、SHA-256、实际来源、裁切矩形、视觉规则版本及复用关系，独立打包重新校验格式、解码、尺寸、透明度和哈希。
 - 每个分类声明全部必需、按名单必需、展示代理或整类不适用；应有图片的名单内覆盖必须为 100%，例外逐实体解释。真实发布包生成确定性联系表与异常清单，复核全部新增/哈希变化、来源/裁切/复用/规则变化和异常候选，每个可浏览分类固定至少 5 张代表图，其余未变化图片按类抽查 5%（至少 3、至多 20）。一名具名审核者覆盖全部范围，错实体、来源碰撞、异常复用或歧义必须第二人复核；未处理待复核项阻断 `.svdata`。报告按分类及逐实体记录视觉状态、必需、物化、缺失、解码、透明、裁切、复用和复核结果。
 - 发布候选的绝对门禁要求 schema/manifest/hash/外键/索引一致，核心槽、状态、条件、证据、关系、搜索/facet 投影、补充事实和视觉均无结构错误；任一条件丢失、断裂证据/关系、跨 scope facet、过期冲突补充、图片错误或待复核项都阻断 `.svdata`。
