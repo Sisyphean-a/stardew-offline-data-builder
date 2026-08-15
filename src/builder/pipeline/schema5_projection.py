@@ -790,6 +790,8 @@ def add_purchase_offer_projections(
         if len(offer_keys) != len(set(offer_keys)):
             raise ValueError(f"商店报价缺少可区分稳定键：{entity.id}")
         coin_price_written = False
+        non_coin_offer_written = False
+        dynamic_price_written = False
         for ordinal, (offer_key, offer) in enumerate(zip(offer_keys, sorted_offers, strict=True)):
             scope_id = f"offer:{stable_part(offer_key)}"
             locator = Schema5SourceLocator(
@@ -848,6 +850,7 @@ def add_purchase_offer_projections(
                         locator.id, dynamic_reason, price.get("inputClaimId"),
                     )
             elif price["kind"] == "currency_amount" and currency is not None:
+                non_coin_offer_written = True
                 add_support_fact_item(
                     package, entity.id, f"{slot_prefix}_currency_amount", "integer",
                     integer_value=price["value"], scope_id=scope_id,
@@ -856,12 +859,23 @@ def add_purchase_offer_projections(
                     input_claim_id=price.get("inputClaimId"),
                 )
             elif price["kind"] == "dynamic":
+                dynamic_price_written = True
+                ensure_dynamic_price_slot(
+                    package,
+                    entity.id,
+                    slot_prefix,
+                    locator.id,
+                    str(price["reason"]),
+                    price.get("inputClaimId"),
+                )
                 add_dynamic_price_rule(
                     package, entity.id, slot_prefix, scope_id, condition_id, ordinal,
                     locator.id, str(price["reason"]), price.get("inputClaimId"),
                 )
 
             trade_item = offer.get("tradeItemId")
+            if price["kind"] == "exchange_only":
+                non_coin_offer_written = True
             resolved_trade_items = resolver.resolve(trade_item)
             trade_amount = offer.get("tradeItemAmount")
             if len(resolved_trade_items) == 1:
@@ -883,9 +897,18 @@ def add_purchase_offer_projections(
                 package, entity, "seed_purchase_price", locators_by_entity.get(entity.id)
             )
         elif entity.entity_type in {"big_craftable", "tool", "weapon"} and not coin_price_written:
-            ensure_not_collected_purchase_slot(
-                package, entity, "purchase_price", locators_by_entity.get(entity.id)
-            )
+            # An offer paid only in a special currency or another item has no
+            # gold purchase price by definition. Keep its quoted cost in the
+            # scoped currency/exchange slots instead of penalizing coverage as
+            # an uncollected coin price.
+            if non_coin_offer_written and not dynamic_price_written:
+                ensure_not_applicable_purchase_slot(
+                    package, entity, "purchase_price", locators_by_entity.get(entity.id)
+                )
+            else:
+                ensure_not_collected_purchase_slot(
+                    package, entity, "purchase_price", locators_by_entity.get(entity.id)
+                )
 
 
 def add_weapon_acquisition_projections(
@@ -1273,6 +1296,7 @@ def _special_weapon_condition(
         "62": ("银河剑和 3 个银河之魂", "galaxy_sword_plus_three_souls"),
         "63": ("银河之锤和 3 个银河之魂", "galaxy_hammer_plus_three_souls"),
         "64": ("银河匕首和 3 个银河之魂", "galaxy_dagger_plus_three_souls"),
+        "61": ("挑战矿井额外难度规则奖励", "mine_challenge_reward"),
         "66": ("耕种精通奖励可领取", "farming_mastery_reward"),
     }
     summary, kind = conditions[weapon_id]
@@ -1629,6 +1653,33 @@ def apply_price_modifier(value: float, modifier: dict[str, object]) -> float | N
     if operation in {"Set", "Override"}:
         return amount
     return None
+
+
+def ensure_dynamic_price_slot(
+    package: Schema5Package,
+    entity_id: str,
+    slot_prefix: str,
+    locator_id: str,
+    reason: str,
+    input_claim_id: object,
+) -> None:
+    """Mark a core price question answered when only a runtime rule is knowable.
+
+    A dynamic offer intentionally has no integer ``*_price`` fact item.  Its
+    companion ``*_price_rule`` item explains why.  The price slot itself must
+    nevertheless be ``dynamic_rule`` so coverage distinguishes a supported
+    runtime rule from an uncollected price.
+    """
+    ensure_support_fact_slot(
+        package,
+        entity_id=entity_id,
+        slot_key=f"{slot_prefix}_price",
+        value_type="text",
+        locator_id=locator_id,
+        transformation_rule="official-shop-builder-dynamic-price-rule-v1",
+        input_claim_id=str(input_claim_id) if input_claim_id else None,
+        status="dynamic_rule",
+    )
 
 
 def add_dynamic_price_rule(

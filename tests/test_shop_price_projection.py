@@ -216,6 +216,45 @@ def test_negative_trade_price_can_have_a_separate_modifier_coin_component(
     prices = price_items(package, "fact:object:1:purchase_price")
     assert [item.integer_value for item in prices] == [5]
     assert price_items(package, "fact:object:1:purchase_exchange_amount")[0].integer_value == 3
+    price_slot = next(
+        slot
+        for slot in package.fact_slots
+        if slot.id == "fact:object:1:purchase_price"
+    )
+    assert price_slot.status == "fixed"
+
+
+def test_exchange_only_core_purchase_price_is_not_applicable(tmp_path: Path) -> None:
+    package = build_schema5_staging_package(
+        [entity("big_craftable:1", "big_craftable"), entity("object:2", "object")],
+        tmp_path,
+        game_version="1.6.15",
+        support=OfficialSupportData(
+            shops={
+                "Exchange": {
+                    "Currency": "QiGems",
+                    "Items": [
+                        {
+                            "ItemId": "(BC)1",
+                            "Price": -1,
+                            "TradeItemId": "(O)2",
+                            "TradeItemAmount": 3,
+                        }
+                    ]
+                }
+            }
+        ),
+    )
+
+    price_slot = next(
+        slot
+        for slot in package.fact_slots
+        if slot.id == "fact:big_craftable:1:purchase_price"
+    )
+    assert price_slot.status == "not_applicable"
+    assert price_items(package, "fact:big_craftable:1:purchase_exchange_amount")[
+        0
+    ].integer_value == 3
 
 
 def test_negative_trade_price_with_dynamic_modifier_is_a_dynamic_rule(
@@ -305,6 +344,12 @@ def test_exchange_and_dynamic_prices_never_become_coin_purchase_prices(tmp_path:
     assert rule.text_value == "conditional-or-random-price-modifier"
     rule_slot = next(slot for slot in package.fact_slots if slot.id == rule.slot_id)
     assert rule_slot.status == "dynamic_rule"
+    price_slot = next(
+        slot
+        for slot in package.fact_slots
+        if slot.id == "fact:crop:2:seed_purchase_price"
+    )
+    assert price_slot.status == "dynamic_rule"
     assert any(
         row["reason"] == "conditional-or-random-price-modifier"
         and row["entityId"] == "crop:2"

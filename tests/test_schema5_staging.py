@@ -253,6 +253,27 @@ def test_weapon_acquisition_projection_keeps_shop_and_quest_provenance(
     assert quest_locator.record_key == "Insects"
 
 
+def test_weapon_challenge_reward_rule_has_a_complete_condition(tmp_path: Path) -> None:
+    package = build_schema5_staging_package(
+        [entity("weapon:61", "weapon")],
+        tmp_path,
+        game_version="1.6.15",
+        support=OfficialSupportData(),
+    )
+
+    item = next(
+        item
+        for item in package.fact_items
+        if item.slot_id == "fact:weapon:61:acquisition"
+    )
+    assert item.text_value == "挑战矿井额外难度奖励"
+    condition = next(
+        condition for condition in package.condition_sets if condition.id == item.condition_set_id
+    )
+    assert condition.completeness == "complete"
+    assert condition.player_summary == "挑战矿井额外难度规则奖励"
+
+
 def test_weapon_acquisition_projection_uses_explicit_game_rules_not_mine_level_fields(
     tmp_path: Path,
 ) -> None:
