@@ -141,6 +141,11 @@ SPECIAL_WEAPON_ACQUISITION_RULES: dict[str, tuple[str, str, str]] = {
         "MineShaft.getSpecialItemForThisMineLevel",
         "official-mine-challenge-item-to-weapon-acquisition-v1",
     ),
+    "65": (
+        "森林传送柱事件奖励",
+        "GameLocation.performAction:ForestPylon",
+        "official-forest-pylon-event-to-weapon-acquisition-v1",
+    ),
     "66": (
         "耕种精通奖励",
         "MasteryTrackerMenu",
@@ -1306,6 +1311,10 @@ def _special_weapon_condition(
         "63": ("银河之锤和 3 个银河之魂", "galaxy_hammer_plus_three_souls"),
         "64": ("银河匕首和 3 个银河之魂", "galaxy_dagger_plus_three_souls"),
         "61": ("挑战矿井额外难度规则奖励", "mine_challenge_reward"),
+        "65": (
+            "在森林传送柱交付远方之石，触发对应事件奖励",
+            "forest_pylon_far_away_stone_event",
+        ),
         "66": ("耕种精通奖励可领取", "farming_mastery_reward"),
     }
     summary, kind = conditions[weapon_id]
