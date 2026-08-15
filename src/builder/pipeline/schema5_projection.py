@@ -101,6 +101,11 @@ VOLCANO_CHEST_WEAPONS: dict[str, int] = {
 # shop/chest tables.  The source method is kept explicit so an App consumer
 # can distinguish a game rule from a direct JSON row.
 SPECIAL_WEAPON_ACQUISITION_RULES: dict[str, tuple[str, str, str]] = {
+    "2": (
+        "闹鬼骷髅的诅咒娃娃变体随机掉落",
+        "Bat.getExtraDropItems",
+        "official-haunted-skull-drop-to-weapon-acquisition-v1",
+    ),
     "4": (
         "沙漠三柱规则奖励",
         "GameLocation.getGalaxySword",
@@ -1290,6 +1295,10 @@ def _special_weapon_condition(
     weapon_id: str,
 ) -> str:
     conditions = {
+        "2": (
+            "击败同时带有诅咒娃娃与闹鬼骷髅状态的蝙蝠变体；该掉落为随机结果",
+            "haunted_skull_cursed_doll_random_drop",
+        ),
         "4": ("需要七彩碎片，并在沙漠三柱处触发规则", "prismatic_shard_desert_pillars"),
         "47": ("新存档初始工具", "new_game_start"),
         "53": ("采石场矿井尽头的黄金镰刀交互规则", "quarry_mine_golden_scythe"),
