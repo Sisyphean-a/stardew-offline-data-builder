@@ -250,8 +250,11 @@ def add_legacy_structured_metadata(
         ingredients = parse_ingredients(fields[0] if fields else None)
         if ingredients:
             attributes["Ingredients"] = ingredients
-        if entity_type == "crafting_recipe" and len(fields) > 4:
-            unlock = legacy_text(fields, 4)
+        # 解锁条件：烹饪配方在第 3 段，制造配方在第 4 段（与
+        # CraftingRecipe.TryParseLevelRequirement 的读取位置一致）。
+        unlock_index = 3 if entity_type == "cooking_recipe" else 4
+        if len(fields) > unlock_index:
+            unlock = legacy_text(fields, unlock_index)
             if unlock and unlock != "null":
                 attributes["UnlockCondition"] = unlock
     elif entity_type == "bundle":

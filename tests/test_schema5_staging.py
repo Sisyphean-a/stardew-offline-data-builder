@@ -464,6 +464,147 @@ def test_item_projects_gift_likers_and_drop_sources(tmp_path: Path) -> None:
     assert "drop_sources" not in by_entity.get("object:74", {})
 
 
+def test_tv_date_label_matches_known_broadcast_dates() -> None:
+    from builder.pipeline.schema5_projection import tv_date_label
+
+    assert tv_date_label(3) == "奇数年春季21日"  # 萝卜沙拉
+    assert tv_date_label(4) == "奇数年春季28日"  # 煎蛋卷
+    assert tv_date_label(17) == "偶数年春季7日"  # 披萨
+
+
+def test_recipe_sources_cover_tv_friendship_skill_and_shop(tmp_path: Path) -> None:
+    support = OfficialSupportData(cooking_channel_episodes={"Pizza": 17})
+    package = build_schema5_staging_package(
+        [
+            NormalizedEntity(
+                id="cooking_recipe:Pizza",
+                entity_type="cooking_recipe",
+                game_id="Pizza",
+                internal_name=None,
+                name_zh="披萨",
+                name_en="Pizza",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={"outputItemId": "206"},
+                source_file="Data/CookingRecipes.json",
+            ),
+            NormalizedEntity(
+                id="cooking_recipe:Salmon-Dinner",
+                entity_type="cooking_recipe",
+                game_id="Salmon Dinner",
+                internal_name=None,
+                name_zh="鲑鱼晚餐",
+                name_en="Salmon Dinner",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={"UnlockCondition": "f Gus 3"},
+                source_file="Data/CookingRecipes.json",
+            ),
+            NormalizedEntity(
+                id="cooking_recipe:Lucky-Lunch",
+                entity_type="cooking_recipe",
+                game_id="Lucky Lunch",
+                internal_name=None,
+                name_zh="幸运午餐",
+                name_en="Lucky Lunch",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={"UnlockCondition": "s Luck 8"},
+                source_file="Data/CookingRecipes.json",
+            ),
+            NormalizedEntity(
+                id="cooking_recipe:Triple-Shot-Espresso",
+                entity_type="cooking_recipe",
+                game_id="Triple Shot Espresso",
+                internal_name=None,
+                name_zh="三倍浓缩咖啡",
+                name_en="Triple Shot Espresso",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={"outputItemId": "253"},
+                source_file="Data/CookingRecipes.json",
+            ),
+            NormalizedEntity(
+                id="cooking_recipe:Fried-Egg",
+                entity_type="cooking_recipe",
+                game_id="Fried Egg",
+                internal_name=None,
+                name_zh="煎鸡蛋",
+                name_en="Fried Egg",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={"UnlockCondition": "default"},
+                source_file="Data/CookingRecipes.json",
+            ),
+            NormalizedEntity(
+                id="villager:Gus",
+                entity_type="villager",
+                game_id="Gus",
+                internal_name=None,
+                name_zh="格斯",
+                name_en="Gus",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={},
+                source_file="Data/Characters.json",
+            ),
+            NormalizedEntity(
+                id="shop:Saloon",
+                entity_type="shop",
+                game_id="Saloon",
+                internal_name=None,
+                name_zh="星之果实餐吧",
+                name_en="Saloon",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={
+                    "Items": [{"ItemId": "(O)253", "Price": 5000, "IsRecipe": True}]
+                },
+                source_file="Data/Shops.json",
+            ),
+        ],
+        tmp_path,
+        game_version="1.6.15",
+        support=support,
+    )
+    by_entity: dict[str, dict[str, str]] = {}
+    for fact in package.fact_slots:
+        by_entity.setdefault(fact.entity_id, {})[fact.slot_key] = fact.text_value or ""
+
+    assert by_entity["cooking_recipe:Pizza"]["recipe_source"] == "女王的美食（偶数年春季7日）"
+    assert (
+        by_entity["cooking_recipe:Salmon-Dinner"]["recipe_source"]
+        == "与格斯好感度3心（邮件获得）"
+    )
+    assert by_entity["cooking_recipe:Lucky-Lunch"]["recipe_source"] == "幸运等级 8"
+    assert (
+        by_entity["cooking_recipe:Triple-Shot-Espresso"]["recipe_source"]
+        == "星之果实餐吧购买"
+    )
+    assert by_entity["cooking_recipe:Fried-Egg"]["recipe_source"] == "初始掌握"
+
+
 def test_weapon_projection_derives_sale_price_from_official_runtime_rule(
     tmp_path: Path,
 ) -> None:

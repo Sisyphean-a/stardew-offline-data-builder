@@ -31,6 +31,8 @@ class OfficialSupportData:
     hats_zh: dict[str, str] = field(default_factory=dict)
     shirts_zh: dict[str, str] = field(default_factory=dict)
     pants_zh: dict[str, str] = field(default_factory=dict)
+    # 女王的美食电视节目：菜谱键名 → 剧集序号（1-32，两年循环每周日播出一集）。
+    cooking_channel_episodes: dict[str, int] = field(default_factory=dict)
 
     def hat_name_zh(self, hat_id: str) -> str | None:
         """官方 hats.zh-CN.json 旧格式：名称/描述/…/中文名（最后一个字段）。"""
@@ -63,7 +65,26 @@ def load_official_support_data(unpacked_dir: Path) -> OfficialSupportData:
         hats_zh=hats_zh,
         shirts_zh=clothing_names_zh(data_dir / "Shirts.json", "strings/shirts", tables),
         pants_zh=clothing_names_zh(data_dir / "Pants.json", "strings/pants", tables),
+        cooking_channel_episodes=load_cooking_channel_episodes(unpacked_dir),
     )
+
+
+def load_cooking_channel_episodes(unpacked_dir: Path) -> dict[str, int]:
+    """女王的美食剧集表：菜谱键名 → 剧集序号（1-32）。"""
+    path = unpacked_dir / "Data" / "TV" / "CookingChannel.json"
+    if not path.exists():
+        return {}
+    payload = load_json_file(path)
+    if not isinstance(payload, dict):
+        return {}
+    episodes: dict[str, int] = {}
+    for raw_index, value in payload.items():
+        if not isinstance(value, str) or not raw_index.isdigit():
+            continue
+        recipe_name = value.split("/", maxsplit=1)[0].strip()
+        if recipe_name:
+            episodes[recipe_name] = int(raw_index)
+    return episodes
 
 
 def clothing_names_zh(

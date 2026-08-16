@@ -1143,6 +1143,7 @@ def build_schema5_package(
         entities = resolve_tailoring_output_names(entities, support)
         by_id = {entity.id: entity for entity in entities}
     gift_index, universal_gift, drop_index = build_item_relation_indexes(entities)
+    shop_index = build_recipe_shop_index(entities)
     schema_entities = [to_schema_entity(entity) for entity in entities]
     package = Schema5Package(
         entities=schema_entities,
@@ -1179,6 +1180,8 @@ def build_schema5_package(
             gift_index=gift_index,
             universal_gift=universal_gift,
             drop_index=drop_index,
+            shop_index=shop_index,
+            support=support,
         )
         fact_slots.extend(recipe_output_facts(entity, by_id))
         package.fact_slots.extend(fact_slots)
@@ -6325,6 +6328,93 @@ def drop_source_facts(
     return [fixed_fact(entity, "drop_sources", "text", text_value="、".join(labels))]
 
 
+# 配方解锁技能 → 中文（1.6 官方 "s <skill> <level>" 格式）。
+RECIPE_SKILL_ZH = {
+    "farming": "耕种",
+    "fishing": "钓鱼",
+    "foraging": "采集",
+    "mining": "采矿",
+    "combat": "战斗",
+    "luck": "幸运",
+}
+
+TV_SEASON_ZH = ("春季", "夏季", "秋季", "冬季")
+
+
+def tv_date_label(episode: int) -> str:
+    """女王的美食剧集 → 首播日期（两年 224 天循环，每周日一集）。
+
+    与游戏 TV.getWeeklyRecipe 的 DaysPlayed%224/7 周索引一致：第 N 集在
+    DaysPlayed = 7N-1（该周周日）播出（已在 wiki 的煎蛋卷/披萨/萝卜沙拉
+    首播日期上验证）。
+    """
+    days_played = 7 * episode - 1
+    year_label = "奇数年" if days_played // 112 == 0 else "偶数年"
+    day_of_year = days_played % 112
+    return f"{year_label}{TV_SEASON_ZH[day_of_year // 28]}{day_of_year % 28 + 1}日"
+
+
+def build_recipe_shop_index(entities: list[NormalizedEntity]) -> dict[str, list[str]]:
+    """商店配方索引：菜谱产物物品 ID → 出售该配方的商店中文名。"""
+    index: dict[str, list[str]] = defaultdict(list)
+    for entity in entities:
+        if entity.entity_type != "shop":
+            continue
+        items = entity.source_attributes.get("Items")
+        if not isinstance(items, list):
+            continue
+        shop_name = entity.name_zh or entity.id
+        for item in items:
+            if not isinstance(item, dict) or not item.get("IsRecipe"):
+                continue
+            raw = str(item.get("ItemId") or "").strip()
+            if raw.startswith("(O)"):
+                raw = raw[3:]
+            if raw:
+                index[raw].append(shop_name)
+    return index
+
+
+def recipe_source_facts(
+    entity: NormalizedEntity,
+    attributes: dict[str, Any],
+    support: OfficialSupportData | None,
+    by_id: dict[str, NormalizedEntity] | None,
+    shop_index: dict[str, list[str]] | None,
+) -> list[Schema5FactSlot]:
+    """配方获取方式：初始掌握 / 技能等级 / 好感邮件 / 女王的美食 / 商店购买。"""
+    parts: list[str] = []
+    unlock = text_value(attributes.get("UnlockCondition"))
+    if unlock:
+        tokens = unlock.split()
+        first = tokens[0].casefold() if tokens else ""
+        if first == "default":
+            parts.append("初始掌握")
+        elif first == "f" and len(tokens) >= 3:
+            villager = (by_id or {}).get(f"villager:{tokens[1]}")
+            name = (
+                villager.name_zh
+                if villager is not None and villager.name_zh
+                else tokens[1]
+            )
+            parts.append(f"与{name}好感度{tokens[2]}心（邮件获得）")
+        elif first == "s" and len(tokens) >= 3:
+            skill = RECIPE_SKILL_ZH.get(tokens[1].casefold(), tokens[1])
+            parts.append(f"{skill}等级 {tokens[2]}")
+    if support is not None:
+        episode = support.cooking_channel_episodes.get(str(entity.game_id or ""))
+        if episode is not None:
+            parts.append(f"女王的美食（{tv_date_label(episode)}）")
+    output_id = text_value(attributes.get("outputItemId"))
+    if output_id and shop_index:
+        shops = sorted(set(shop_index.get(output_id, [])))
+        if shops:
+            parts.append(f"{'、'.join(shops)}购买")
+    if not parts:
+        return []
+    return [fixed_fact(entity, "recipe_source", "text", text_value="、".join(parts))]
+
+
 def drop_facts(
     entity: NormalizedEntity,
     attributes: dict[str, Any],
@@ -6476,6 +6566,8 @@ def typed_facts(
     gift_index: dict[str, dict[str, list[str]]] | None = None,
     universal_gift: dict[str, set[str]] | None = None,
     drop_index: dict[str, dict[str, list[str]]] | None = None,
+    shop_index: dict[str, list[str]] | None = None,
+    support: OfficialSupportData | None = None,
 ) -> list[Schema5FactSlot]:
     attributes = structured_attributes(entity)
     facts: list[Schema5FactSlot] = []
@@ -6491,6 +6583,10 @@ def typed_facts(
         facts.extend(tailoring_facts(entity, attributes, by_id))
     if entity.entity_type == "drop":
         facts.extend(drop_facts(entity, attributes, by_id))
+    if entity.entity_type in {"cooking_recipe", "crafting_recipe"}:
+        facts.extend(
+            recipe_source_facts(entity, attributes, support, by_id, shop_index)
+        )
     if entity.entity_type == "object":
         facts.extend(food_effect_facts(entity, attributes))
         facts.extend(gift_liker_facts(entity, gift_index, universal_gift))
