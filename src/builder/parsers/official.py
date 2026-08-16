@@ -10,8 +10,8 @@ from builder.parsers.official_assets import LOCALE_SUFFIX, unwrap_content
 from builder.parsers.official_visuals import apply_image_metadata
 from builder.pipeline.official_values import (
     parse_bundle_ingredients,
-    parse_int,
     parse_ingredients,
+    parse_int,
 )
 
 

@@ -28,11 +28,11 @@ from builder.models_schema5 import (
     Schema5SourceLocator,
     Schema5Visual,
 )
+from builder.pipeline.normalize_titles import VILLAGER_DISPLAY_NAMES
 from builder.pipeline.official_item_index import ItemReferenceResolver
 from builder.pipeline.official_references import build_reference_index
 from builder.pipeline.official_shop_references import build_shop_index, shop_offer
 from builder.pipeline.official_values import dictionary_list, entity_ids_for_item, parse_ingredients
-from builder.pipeline.normalize_titles import VILLAGER_DISPLAY_NAMES
 from builder.sources.official_support import OfficialSupportData
 from builder.utils.hashing import sha256_file
 
@@ -1295,7 +1295,11 @@ def project_card_actions(package: Schema5Package) -> None:
         "quest": ("quest_type", "quest_objective", "quest_reward"),
         "achievement": ("achievement_description",),
         "bundle": ("bundle_area", "bundle_ingredients"),
-        "special_order": ("special_order_duration", "special_order_objective", "special_order_requester"),
+        "special_order": (
+            "special_order_duration",
+            "special_order_objective",
+            "special_order_requester",
+        ),
     }
     updated = []
     for card in package.entity_cards:
