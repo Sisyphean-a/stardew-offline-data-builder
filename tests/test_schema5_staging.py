@@ -605,6 +605,178 @@ def test_recipe_sources_cover_tv_friendship_skill_and_shop(tmp_path: Path) -> No
     assert by_entity["cooking_recipe:Fried-Egg"]["recipe_source"] == "初始掌握"
 
 
+def test_special_order_rewards_and_bundle_quality_and_fish_pond(tmp_path: Path) -> None:
+    support = OfficialSupportData(
+        fish_ponds=[
+            {
+                "Id": "Pufferfish",
+                "RequiredTags": ["item_pufferfish"],
+                "ProducedItems": [
+                    {"ItemId": "(O)812", "RequiredPopulation": 3, "Chance": 0.2}
+                ],
+            }
+        ]
+    )
+    package = build_schema5_staging_package(
+        [
+            NormalizedEntity(
+                id="special_order:Clint",
+                entity_type="special_order",
+                game_id="Clint",
+                internal_name=None,
+                name_zh="洞穴巡查",
+                name_en="Cave Patrol",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={
+                    "Rewards": [
+                        {"Type": "Money", "Data": {"Amount": "6000"}},
+                        {"Type": "Object", "Data": {"Item": "72", "Amount": "5"}},
+                        {"Type": "Friendship", "Data": {}},
+                        {"Type": "Mail", "Data": {"MailReceived": "x"}},
+                    ]
+                },
+                source_file="Data/SpecialOrders.json",
+            ),
+            NormalizedEntity(
+                id="special_order:Caroline",
+                entity_type="special_order",
+                game_id="Caroline",
+                internal_name=None,
+                name_zh="岛屿食材",
+                name_en="Island Ingredients",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={
+                    "Rewards": [
+                        {"Type": "Money", "Data": {"Amount": "{Crop:Price}", "Multiplier": "50"}}
+                    ]
+                },
+                source_file="Data/SpecialOrders.json",
+            ),
+            NormalizedEntity(
+                id="object:72",
+                entity_type="object",
+                game_id="72",
+                internal_name=None,
+                name_zh="钻石",
+                name_en="Diamond",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={},
+                source_file="Data/Objects.json",
+            ),
+            NormalizedEntity(
+                id="bundle:Crafts-Room/13",
+                entity_type="bundle",
+                game_id="Crafts Room/13",
+                internal_name=None,
+                name_zh="春季采集",
+                name_en=None,
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={
+                    "BundleIngredients": [
+                        {"itemId": "190", "quantity": 5, "quality": 2}
+                    ]
+                },
+                source_file="Data/Bundles.json",
+            ),
+            NormalizedEntity(
+                id="object:190",
+                entity_type="object",
+                game_id="190",
+                internal_name=None,
+                name_zh="防风草",
+                name_en="Parsnip",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={},
+                source_file="Data/Objects.json",
+            ),
+            NormalizedEntity(
+                id="fish:128",
+                entity_type="fish",
+                game_id="128",
+                internal_name=None,
+                name_zh="河豚",
+                name_en="Pufferfish",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={},
+                source_file="Data/Fish.json",
+            ),
+            NormalizedEntity(
+                id="object:128",
+                entity_type="object",
+                game_id="128",
+                internal_name=None,
+                name_zh="河豚",
+                name_en="Pufferfish",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={"ContextTags": ["item_pufferfish"]},
+                source_file="Data/Objects.json",
+            ),
+            NormalizedEntity(
+                id="object:812",
+                entity_type="object",
+                game_id="812",
+                internal_name=None,
+                name_zh="罗非鱼",
+                name_en="Tilapia",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={},
+                source_file="Data/Objects.json",
+            ),
+        ],
+        tmp_path,
+        game_version="1.6.15",
+        support=support,
+    )
+    by_entity: dict[str, dict[str, str]] = {}
+    for fact in package.fact_slots:
+        by_entity.setdefault(fact.entity_id, {})[fact.slot_key] = fact.text_value or ""
+
+    assert (
+        by_entity["special_order:Clint"]["special_order_reward"]
+        == "6000 金币、钻石×5、好感度"
+    )
+    assert (
+        by_entity["special_order:Caroline"]["special_order_reward"]
+        == "金币（按目标价值的 50 倍）"
+    )
+    assert (
+        by_entity["bundle:Crafts-Room/13"]["bundle_ingredients"] == "防风草×5（金星）"
+    )
+    assert by_entity["fish:128"]["fish_pond_outputs"] == "罗非鱼（3 条后，20%）"
+
+
 def test_weapon_projection_derives_sale_price_from_official_runtime_rule(
     tmp_path: Path,
 ) -> None:

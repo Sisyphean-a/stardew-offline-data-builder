@@ -31,7 +31,7 @@ from builder.models_schema5 import (
 )
 from builder.pipeline.normalize_titles import VILLAGER_DISPLAY_NAMES
 from builder.pipeline.normalize_support import drop_chance, percent_label
-from builder.pipeline.official_item_index import ItemReferenceResolver
+from builder.pipeline.official_item_index import ItemReferenceResolver, tags_for_entity
 from builder.pipeline.official_references import build_reference_index
 from builder.pipeline.official_shop_references import build_shop_index, shop_offer
 from builder.pipeline.official_values import dictionary_list, entity_ids_for_item, parse_ingredients
@@ -1144,6 +1144,7 @@ def build_schema5_package(
         by_id = {entity.id: entity for entity in entities}
     gift_index, universal_gift, drop_index = build_item_relation_indexes(entities)
     shop_index = build_recipe_shop_index(entities)
+    fish_pond_index = build_fish_pond_index(support, by_id)
     schema_entities = [to_schema_entity(entity) for entity in entities]
     package = Schema5Package(
         entities=schema_entities,
@@ -1181,6 +1182,7 @@ def build_schema5_package(
             universal_gift=universal_gift,
             drop_index=drop_index,
             shop_index=shop_index,
+            fish_pond_index=fish_pond_index,
             support=support,
         )
         fact_slots.extend(recipe_output_facts(entity, by_id))
@@ -6050,7 +6052,15 @@ def bundle_ingredient_label(
     target = by_id.get(reference)
     name = target.name_zh if target is not None else item_id
     suffix = f"×{quantity}" if isinstance(quantity, int) and quantity > 1 else ""
+    quality = item.get("quality")
+    quality_label = BUNDLE_QUALITY_ZH.get(quality)
+    if quality_label:
+        suffix += f"（{quality_label}）"
     return f"{name}{suffix}"
+
+
+# 官方品质码 → 中文（1=银星，2=金星，4=铱星）。
+BUNDLE_QUALITY_ZH = {1: "银星", 2: "金星", 4: "铱星"}
 
 
 def bundle_reward_label(
@@ -6354,6 +6364,86 @@ def tv_date_label(episode: int) -> str:
     return f"{year_label}{TV_SEASON_ZH[day_of_year // 28]}{day_of_year % 28 + 1}日"
 
 
+def _pond_entry_applies(entry: dict[str, object], fish_item_id: str) -> bool:
+    """鱼塘产出规则是否适用于该鱼（官方 Condition 按输入鱼过滤）。"""
+    condition = text_value(entry.get("Condition"))
+    if not condition:
+        return True
+    if condition.startswith("ITEM_ID Input "):
+        allowed = {
+            token[3:].strip()
+            for token in condition.split()[2:]
+            if token.startswith("(O)")
+        }
+        return fish_item_id in allowed
+    return True
+
+
+def build_fish_pond_index(
+    support: OfficialSupportData | None,
+    by_id: dict[str, NormalizedEntity],
+) -> dict[str, list[dict[str, object]]]:
+    """鱼塘产出索引：鱼实体 ID → 官方 FishPondData 产出规则列表（按输入鱼过滤）。"""
+    if support is None:
+        return {}
+    index: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for pond in support.fish_ponds:
+        required_tags = {
+            str(tag).strip() for tag in (pond.get("RequiredTags") or []) if str(tag).strip()
+        }
+        produced = pond.get("ProducedItems")
+        if not isinstance(produced, list) or not produced:
+            continue
+        for entity_id, entity in by_id.items():
+            if entity.entity_type != "fish" or not entity.game_id:
+                continue
+            item = by_id.get(f"object:{entity.game_id}")
+            tags = tags_for_entity(item, by_id) if item else set()
+            if required_tags and not required_tags.issubset(tags):
+                continue
+            index[entity_id].extend(
+                entry
+                for entry in produced
+                if isinstance(entry, dict)
+                and _pond_entry_applies(entry, entity.game_id)
+            )
+    return index
+
+
+def fish_pond_facts(
+    entity: NormalizedEntity,
+    pond_index: dict[str, list[dict[str, object]]] | None,
+    by_id: dict[str, NormalizedEntity],
+) -> list[Schema5FactSlot]:
+    """鱼：鱼塘产出物（人口门槛 + 物品 + 概率）。"""
+    if not pond_index:
+        return []
+    rules = pond_index.get(entity.id)
+    if not rules:
+        return []
+    labels: list[str] = []
+    for rule in rules:
+        item_id = text_value(rule.get("ItemId"))
+        if not item_id:
+            continue
+        if item_id.startswith("(O)"):
+            item_id = item_id[3:]
+        target = by_id.get(f"object:{item_id}")
+        name = target.name_zh if target is not None and target.name_zh else item_id
+        parts = [name]
+        population = rule.get("RequiredPopulation")
+        if isinstance(population, int) and population > 0:
+            parts.append(f"{population} 条后")
+        chance = rule.get("Chance")
+        if isinstance(chance, int | float) and not isinstance(chance, bool):
+            parts.append(percent_label(chance * 100))
+        detail = "，".join(parts[1:])
+        labels.append(f"{parts[0]}（{detail}）" if detail else parts[0])
+    if not labels:
+        return []
+    return [fixed_fact(entity, "fish_pond_outputs", "text", text_value="；".join(labels))]
+
+
 def build_recipe_shop_index(entities: list[NormalizedEntity]) -> dict[str, list[str]]:
     """商店配方索引：菜谱产物物品 ID → 出售该配方的商店中文名。"""
     index: dict[str, list[str]] = defaultdict(list)
@@ -6512,7 +6602,57 @@ def special_order_facts(
                 text_value="；".join(cleaned),
             )
         )
+    rewards = attributes.get("Rewards")
+    if isinstance(rewards, list) and rewards:
+        labels = [
+            special_order_reward_label(item, by_id or {})
+            for item in rewards
+            if isinstance(item, dict)
+        ]
+        labels = [label for label in labels if label]
+        if labels:
+            facts.append(
+                fixed_fact(
+                    entity,
+                    "special_order_reward",
+                    "text",
+                    text_value="、".join(labels),
+                )
+            )
     return facts
+
+
+def special_order_reward_label(
+    reward: dict[str, object], by_id: dict[str, NormalizedEntity]
+) -> str | None:
+    """特殊订单奖励的中文文案（金币/物品/好感度；邮件奖励不展示）。"""
+    reward_type = text_value(reward.get("Type"))
+    data = reward.get("Data")
+    if not isinstance(data, dict):
+        return None
+    if reward_type == "Money":
+        amount = text_value(data.get("Amount"))
+        if amount is not None and amount.lstrip("-").isdigit():
+            return f"{int(amount)} 金币"
+        multiplier = text_value(data.get("Multiplier"))
+        if multiplier is not None and multiplier.lstrip("-").isdigit():
+            return f"金币（按目标价值的 {int(multiplier)} 倍）"
+        return None
+    if reward_type == "Object":
+        item_id = text_value(data.get("Item"))
+        if item_id is None:
+            return None
+        target = by_id.get(f"object:{item_id}")
+        name = (
+            target.name_zh if target is not None and target.name_zh else item_id
+        )
+        amount = text_value(data.get("Amount"))
+        if amount is not None and amount.lstrip("-").isdigit():
+            return f"{name}×{int(amount)}"
+        return name
+    if reward_type == "Friendship":
+        return "好感度"
+    return None
 
 
 GINGER_ISLAND_WEATHER_ZH = {
@@ -6567,6 +6707,7 @@ def typed_facts(
     universal_gift: dict[str, set[str]] | None = None,
     drop_index: dict[str, dict[str, list[str]]] | None = None,
     shop_index: dict[str, list[str]] | None = None,
+    fish_pond_index: dict[str, list[dict[str, object]]] | None = None,
     support: OfficialSupportData | None = None,
 ) -> list[Schema5FactSlot]:
     attributes = structured_attributes(entity)
@@ -6587,6 +6728,8 @@ def typed_facts(
         facts.extend(
             recipe_source_facts(entity, attributes, support, by_id, shop_index)
         )
+    if entity.entity_type == "fish":
+        facts.extend(fish_pond_facts(entity, fish_pond_index, by_id or {}))
     if entity.entity_type == "object":
         facts.extend(food_effect_facts(entity, attributes))
         facts.extend(gift_liker_facts(entity, gift_index, universal_gift))
