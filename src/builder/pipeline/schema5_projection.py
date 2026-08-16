@@ -5682,6 +5682,8 @@ QUEST_TYPE_ZH = {
 }
 
 SPECIAL_ORDER_DURATION_ZH = {
+    "OneDay": "一天",
+    "ThreeDays": "三天",
     "Week": "一周",
     "TwoWeeks": "两周",
     "Month": "一个月",
