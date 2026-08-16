@@ -6175,14 +6175,17 @@ def _buff_number(value: object) -> float | None:
 
 
 def food_effect_facts(
-    entity: NormalizedEntity, attributes: dict[str, Any]
+    entity: NormalizedEntity,
+    attributes: dict[str, Any],
+    item_id: str | None = None,
 ) -> list[Schema5FactSlot]:
     """食物/饮品：恢复量与增益（来自官方 Edibility/Buffs，公式与 1.6.15 游戏一致）。"""
     facts: list[Schema5FactSlot] = []
     edibility = attributes.get("Edibility")
     if not isinstance(edibility, int) or isinstance(edibility, bool) or edibility <= 0:
         return facts
-    item_id = (entity.game_id or "").split("/", maxsplit=1)[0].strip()
+    if item_id is None:
+        item_id = (entity.game_id or "").split("/", maxsplit=1)[0].strip()
     stamina, health = _food_stamina_health(edibility, item_id)
     parts: list[str] = []
     if stamina == 999:
@@ -6226,6 +6229,23 @@ def food_effect_facts(
             fixed_fact(entity, "food_buffs", "text", text_value="；".join(labels))
         )
     return facts
+
+
+def recipe_effect_facts(
+    entity: NormalizedEntity,
+    attributes: dict[str, Any],
+    by_id: dict[str, NormalizedEntity] | None,
+) -> list[Schema5FactSlot]:
+    """料理配方：成品菜肴的恢复量与增益（来自产出物品的官方数据）。"""
+    output_id = text_value(attributes.get("outputItemId"))
+    if not output_id:
+        return []
+    target = (by_id or {}).get(f"object:{output_id}")
+    if target is None:
+        return []
+    return food_effect_facts(
+        entity, structured_attributes(target), item_id=target.game_id
+    )
 
 
 # 送礼偏好层级 → 中文标签（物品详情页只展示最有价值的层级）。
@@ -6685,6 +6705,15 @@ def special_order_facts(
                     text_value="、".join(labels),
                 )
             )
+    if isinstance(attributes.get("Repeatable"), bool):
+        facts.append(
+            fixed_fact(
+                entity,
+                "special_order_repeatable",
+                "boolean",
+                boolean_value=attributes["Repeatable"],
+            )
+        )
     return facts
 
 
@@ -6794,6 +6823,8 @@ def typed_facts(
         facts.extend(
             recipe_source_facts(entity, attributes, support, by_id, shop_index)
         )
+    if entity.entity_type == "cooking_recipe":
+        facts.extend(recipe_effect_facts(entity, attributes, by_id))
     if entity.entity_type == "fish":
         facts.extend(fish_pond_facts(entity, fish_pond_index, by_id or {}))
     if entity.entity_type == "furniture":

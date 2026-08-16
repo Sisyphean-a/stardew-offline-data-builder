@@ -802,6 +802,94 @@ def test_furniture_projects_kind_fact(tmp_path: Path) -> None:
     assert by_entity["furniture:1122"]["furniture_kind"] == "双人床"
 
 
+def test_recipe_shows_dish_effects_and_repeatable_flag(tmp_path: Path) -> None:
+    package = build_schema5_staging_package(
+        [
+            NormalizedEntity(
+                id="cooking_recipe:Pizza",
+                entity_type="cooking_recipe",
+                game_id="Pizza",
+                internal_name=None,
+                name_zh="披萨",
+                name_en="Pizza",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={"outputItemId": "206"},
+                source_file="Data/CookingRecipes.json",
+            ),
+            NormalizedEntity(
+                id="object:206",
+                entity_type="object",
+                game_id="206",
+                internal_name=None,
+                name_zh="披萨",
+                name_en="Pizza",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={
+                    "Edibility": 60,
+                    "Buffs": [
+                        {
+                            "Id": "Food",
+                            "Duration": 240,
+                            "CustomAttributes": {"FarmingLevel": 0.0},
+                        }
+                    ],
+                },
+                source_file="Data/Objects.json",
+            ),
+            NormalizedEntity(
+                id="special_order:Caroline",
+                entity_type="special_order",
+                game_id="Caroline",
+                internal_name=None,
+                name_zh="岛屿食材",
+                name_en="Island Ingredients",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={"Repeatable": True},
+                source_file="Data/SpecialOrders.json",
+            ),
+            NormalizedEntity(
+                id="special_order:Clint",
+                entity_type="special_order",
+                game_id="Clint",
+                internal_name=None,
+                name_zh="洞穴巡查",
+                name_en="Cave Patrol",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={"Repeatable": False},
+                source_file="Data/SpecialOrders.json",
+            ),
+        ],
+        tmp_path,
+        game_version="1.6.15",
+    )
+    by_entity: dict[str, dict[str, object]] = {}
+    for fact in package.fact_slots:
+        by_entity.setdefault(fact.entity_id, {})[fact.slot_key] = (
+            fact.text_value if fact.text_value is not None else fact.boolean_value
+        )
+
+    assert by_entity["cooking_recipe:Pizza"]["edibility"] == "恢复 150 体力、恢复 67 生命"
+    assert "food_buffs" not in by_entity.get("cooking_recipe:Pizza", {})
+    assert by_entity["special_order:Caroline"]["special_order_repeatable"] is True
+    assert by_entity["special_order:Clint"]["special_order_repeatable"] is False
+
+
 def test_monster_xp_and_crop_harvest_quantity(tmp_path: Path) -> None:
     package = build_schema5_staging_package(
         [
