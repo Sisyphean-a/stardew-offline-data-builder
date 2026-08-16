@@ -30,6 +30,7 @@ from builder.models_schema5 import (
     Schema5Visual,
 )
 from builder.pipeline.normalize_titles import VILLAGER_DISPLAY_NAMES
+from builder.pipeline.normalize_support import drop_chance, percent_label
 from builder.pipeline.official_item_index import ItemReferenceResolver
 from builder.pipeline.official_references import build_reference_index
 from builder.pipeline.official_shop_references import build_shop_index, shop_offer
@@ -1141,6 +1142,7 @@ def build_schema5_package(
     if support is not None:
         entities = resolve_tailoring_output_names(entities, support)
         by_id = {entity.id: entity for entity in entities}
+    gift_index, universal_gift, drop_index = build_item_relation_indexes(entities)
     schema_entities = [to_schema_entity(entity) for entity in entities]
     package = Schema5Package(
         entities=schema_entities,
@@ -1171,7 +1173,13 @@ def build_schema5_package(
             package.claim_evidence.append(
                 visual_claim(visual.id, locator.id, package)
             )
-        fact_slots = typed_facts(entity, by_id=by_id)
+        fact_slots = typed_facts(
+            entity,
+            by_id=by_id,
+            gift_index=gift_index,
+            universal_gift=universal_gift,
+            drop_index=drop_index,
+        )
         fact_slots.extend(recipe_output_facts(entity, by_id))
         package.fact_slots.extend(fact_slots)
         for fact in fact_slots:
@@ -6207,6 +6215,116 @@ def food_effect_facts(
     return facts
 
 
+# 送礼偏好层级 → 中文标签（物品详情页只展示最有价值的层级）。
+GIFT_LEVEL_ZH = {"loved": "最爱", "liked": "喜欢"}
+
+
+def build_item_relation_indexes(
+    entities: list[NormalizedEntity],
+) -> tuple[dict[str, dict[str, list[str]]], dict[str, set[str]], dict[str, dict[str, list[str]]]]:
+    """物品反查索引：送礼（哪些村民最爱/喜欢它）与怪物掉落来源。
+
+    - gift_index: itemId → {loved/liked: [村民中文名]}
+    - universal_gift: itemId → {loved/liked}（Universal_* 条目，表示全体村民）
+    - drop_index: itemId → {怪物中文名: [概率文案]}
+    """
+    by_id = {entity.id: entity for entity in entities}
+    gift_index: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+    universal_gift: dict[str, set[str]] = defaultdict(set)
+    drop_index: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+    for entity in entities:
+        if entity.entity_type == "villager_gift":
+            tastes = entity.source_attributes.get("GiftTastes")
+            if not isinstance(tastes, list):
+                continue
+            suffix = entity.id.split(":", 1)[1] if ":" in entity.id else ""
+            is_universal = suffix.casefold().startswith("universal_")
+            villager = by_id.get(f"villager:{suffix}")
+            villager_name = (
+                villager.name_zh if villager is not None and villager.name_zh else None
+            )
+            for entry in tastes:
+                if not isinstance(entry, dict):
+                    continue
+                preference = str(entry.get("preference") or "").casefold()
+                if preference not in GIFT_LEVEL_ZH:
+                    continue
+                items = entry.get("items")
+                if not isinstance(items, list):
+                    continue
+                for raw in items:
+                    item_id = str(raw or "").strip()
+                    if not item_id or item_id.startswith("-"):
+                        continue
+                    if is_universal:
+                        universal_gift[item_id].add(preference)
+                    elif villager_name:
+                        names = gift_index[item_id][preference]
+                        if villager_name not in names:
+                            names.append(villager_name)
+        elif entity.entity_type == "drop":
+            attrs = entity.source_attributes
+            item_id = str(attrs.get("itemId") or "").strip()
+            if not item_id or item_id.startswith("-"):
+                continue
+            monster_id = str(attrs.get("monsterId") or "").strip().replace(" ", "-")
+            monster = by_id.get(f"monster:{monster_id}")
+            monster_name = (
+                monster.name_zh if monster is not None and monster.name_zh else monster_id
+            )
+            chance = drop_chance(entity)
+            if chance:
+                drop_index[item_id][monster_name].append(chance)
+    return gift_index, universal_gift, drop_index
+
+
+def gift_liker_facts(
+    entity: NormalizedEntity,
+    gift_index: dict[str, dict[str, list[str]]] | None,
+    universal_gift: dict[str, set[str]] | None,
+) -> list[Schema5FactSlot]:
+    """物品：哪些村民最爱/喜欢它（来自官方 NPCGiftTastes 反查）。"""
+    if gift_index is None or universal_gift is None:
+        return []
+    item_id = (entity.game_id or "").split("/", maxsplit=1)[0].strip()
+    if not item_id:
+        return []
+    parts: list[str] = []
+    for level in ("loved", "liked"):
+        if item_id in universal_gift and level in universal_gift[item_id]:
+            parts.append(f"{GIFT_LEVEL_ZH[level]}：所有人")
+            continue
+        names = gift_index.get(item_id, {}).get(level)
+        if names:
+            parts.append(f"{GIFT_LEVEL_ZH[level]}：{'、'.join(names)}")
+    if not parts:
+        return []
+    return [fixed_fact(entity, "gift_likers", "text", text_value="；".join(parts))]
+
+
+def drop_source_facts(
+    entity: NormalizedEntity,
+    drop_index: dict[str, dict[str, list[str]]] | None,
+) -> list[Schema5FactSlot]:
+    """物品：哪些怪物会掉落它（反查掉落记录，合并同怪物的多档概率）。"""
+    if drop_index is None:
+        return []
+    item_id = (entity.game_id or "").split("/", maxsplit=1)[0].strip()
+    if not item_id:
+        return []
+    by_monster = drop_index.get(item_id)
+    if not by_monster:
+        return []
+    labels: list[str] = []
+    for monster_name in sorted(by_monster):
+        chances = list(dict.fromkeys(by_monster[monster_name]))
+        text = monster_name
+        if chances:
+            text += f"（{'、'.join(chances)}）"
+        labels.append(text)
+    return [fixed_fact(entity, "drop_sources", "text", text_value="、".join(labels))]
+
+
 def drop_facts(
     entity: NormalizedEntity,
     attributes: dict[str, Any],
@@ -6225,13 +6343,11 @@ def drop_facts(
         except ValueError:
             chance = None
     if isinstance(chance, int | float) and not isinstance(chance, bool):
-        percent = chance * 100
-        text = (
-            f"{round(percent)}%"
-            if abs(percent - round(percent)) < 1e-9
-            else f"{percent:g}%"
+        facts.append(
+            fixed_fact(
+                entity, "drop_chance", "text", text_value=percent_label(chance * 100)
+            )
         )
-        facts.append(fixed_fact(entity, "drop_chance", "text", text_value=text))
     raw_monster = text_value(attributes.get("monsterId"))
     if raw_monster is not None:
         monster_id = f"monster:{raw_monster.strip().replace(' ', '-')}"
@@ -6357,6 +6473,9 @@ def typed_facts(
     entity: NormalizedEntity,
     *,
     by_id: dict[str, NormalizedEntity] | None = None,
+    gift_index: dict[str, dict[str, list[str]]] | None = None,
+    universal_gift: dict[str, set[str]] | None = None,
+    drop_index: dict[str, dict[str, list[str]]] | None = None,
 ) -> list[Schema5FactSlot]:
     attributes = structured_attributes(entity)
     facts: list[Schema5FactSlot] = []
@@ -6374,6 +6493,8 @@ def typed_facts(
         facts.extend(drop_facts(entity, attributes, by_id))
     if entity.entity_type == "object":
         facts.extend(food_effect_facts(entity, attributes))
+        facts.extend(gift_liker_facts(entity, gift_index, universal_gift))
+        facts.extend(drop_source_facts(entity, drop_index))
     if entity.entity_type == "ginger_island":
         facts.extend(ginger_island_facts(entity, attributes))
     if entity.entity_type == "villager":

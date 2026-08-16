@@ -126,6 +126,25 @@ def build_legacy_entity(
         attributes["hasExplicitDisplayName"] = True
     add_recipe_output_metadata(attributes, discovered.entity_type, fields)
     add_legacy_structured_metadata(attributes, discovered.entity_type, fields)
+    if (
+        discovered.entity_type == "villager_gift"
+        and len(fields) < 3
+        and source_id.startswith("Universal_")
+    ):
+        # Universal_* 行没有「台词/物品列表」交错结构，直接是单个偏好级的
+        # 物品列表（如 Universal_Love: "74 446 ..."），偏好级由键名决定；
+        # 键名用动词（Love/Like），与交错格式的形容词（loved/liked）对齐。
+        level = {
+            "love": "loved",
+            "like": "liked",
+            "neutral": "neutral",
+            "dislike": "disliked",
+            "hate": "hated",
+        }.get(source_id.removeprefix("Universal_").casefold())
+        if level is not None:
+            attributes["GiftTastes"] = [
+                {"preference": level, "items": split_words(fields, 0) or []}
+            ]
     if discovered.entity_type == "crop" and len(fields) > 3:
         attributes["HarvestItemId"] = fields[3]
         source_id = fields[3] or source_id

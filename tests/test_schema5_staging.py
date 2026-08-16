@@ -403,6 +403,67 @@ def test_vault_bundle_gold_ingredient_label(tmp_path: Path) -> None:
     assert slot.text_value == "10000 金币"
 
 
+def test_item_projects_gift_likers_and_drop_sources(tmp_path: Path) -> None:
+    def named(entity_id: str, entity_type: str, name_zh: str, extra: dict[str, object] | None = None) -> NormalizedEntity:
+        return NormalizedEntity(
+            id=entity_id,
+            entity_type=entity_type,
+            game_id=entity_id.split(":", 1)[1],
+            internal_name=None,
+            name_zh=name_zh,
+            name_en=None,
+            description_zh=None,
+            description_en=None,
+            category=None,
+            image_path=None,
+            image_crop_rect=None,
+            extra_json=extra or {},
+            source_file="Data/Characters.json",
+        )
+
+    package = build_schema5_staging_package(
+        [
+            named("villager:Abigail", "villager", "阿比盖尔"),
+            named(
+                "villager_gift:Abigail",
+                "villager_gift",
+                "阿比盖尔的礼物偏好",
+                {
+                    "GiftTastes": [
+                        {"preference": "loved", "items": ["66", "74"]},
+                        {"preference": "liked", "items": ["130"]},
+                    ]
+                },
+            ),
+            named(
+                "villager_gift:Universal_Love",
+                "villager_gift",
+                "通用礼物偏好：最爱",
+                {"GiftTastes": [{"preference": "loved", "items": ["74"]}]},
+            ),
+            named("monster:Green-Slime", "monster", "绿色史莱姆"),
+            named("object:66", "object", "紫水晶"),
+            named("object:74", "object", "五彩碎片"),
+            named(
+                "drop:Green-Slime:0",
+                "drop",
+                "绿色史莱姆掉落：紫水晶（75%）",
+                {"monsterId": "Green Slime", "itemId": "66", "chance": ".75"},
+            ),
+        ],
+        tmp_path,
+        game_version="1.6.15",
+    )
+    by_entity: dict[str, dict[str, str]] = {}
+    for fact in package.fact_slots:
+        by_entity.setdefault(fact.entity_id, {})[fact.slot_key] = fact.text_value or ""
+
+    assert by_entity["object:66"]["gift_likers"] == "最爱：阿比盖尔"
+    assert by_entity["object:66"]["drop_sources"] == "绿色史莱姆（75%）"
+    assert by_entity["object:74"]["gift_likers"] == "最爱：所有人"
+    assert "drop_sources" not in by_entity.get("object:74", {})
+
+
 def test_weapon_projection_derives_sale_price_from_official_runtime_rule(
     tmp_path: Path,
 ) -> None:

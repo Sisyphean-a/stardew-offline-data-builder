@@ -63,6 +63,14 @@ def drop_record_id(entity: NormalizedEntity) -> str:
     return humanize_identifier(source_id) or "未知"
 
 
+def percent_label(percent: float) -> str:
+    """百分比文案：整数值不带小数（75 → 75%），极小值避免科学计数法。"""
+    if abs(percent - round(percent)) < 1e-9:
+        return f"{round(percent)}%"
+    text = f"{percent:.10f}".rstrip("0").rstrip(".")
+    return f"{text}%"
+
+
 def drop_chance(entity: NormalizedEntity) -> str | None:
     """掉落概率的百分比文案（0.05 → 5%）。"""
     value = entity.extra_json.get("chance")
@@ -73,7 +81,4 @@ def drop_chance(entity: NormalizedEntity) -> str | None:
             return None
     if not isinstance(value, int | float) or isinstance(value, bool):
         return None
-    percent = value * 100
-    if abs(percent - round(percent)) < 1e-9:
-        return f"{round(percent)}%"
-    return f"{percent:g}%"
+    return percent_label(value * 100)
