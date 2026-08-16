@@ -575,6 +575,54 @@ def shop_location_zh(shop_id: str) -> str | None:
         return "鹈鹕镇（节日期间）"
     return SHOP_LOCATION_ZH.get(shop_id)
 
+
+# 商店性质分类：普通商店优先于节日/临时商店，方便列表主次排序。
+SHOP_KIND_PRIORITY = {
+    "普通商店": 0,
+    "旅行商人": 1,
+    "兑换": 1,
+    "书摊": 1,
+    "赌场": 1,
+    "火山商店": 1,
+    "其他商店": 2,
+    "节日商店": 3,
+}
+
+# 节日商店按官方 Shops.json 键名识别（DesertFestival_ / Festival_）。
+def classify_shop_kind(shop_id: str) -> str | None:
+    if shop_id.startswith(("DesertFestival_", "Festival_")):
+        return "节日商店"
+    if shop_id in {
+        "Traveler",
+        "IceCreamStand",
+        "BoxOffice",
+        "Concessions",
+        "ResortBar",
+        "PetAdoption",
+        "LostItems",
+        "AdventureGuildRecovery",
+        "ClintUpgrade",
+        "Catalogue",
+        "Furniture Catalogue",
+        "JojaFurnitureCatalogue",
+        "JunimoFurnitureCatalogue",
+        "RetroFurnitureCatalogue",
+        "TrashFurnitureCatalogue",
+        "WizardFurnitureCatalogue",
+    }:
+        return "其他商店"
+    if shop_id == "Traveler":
+        return "旅行商人"
+    if shop_id in {"DesertTrade", "IslandTrade", "QiGemShop", "Raccoon"}:
+        return "兑换"
+    if shop_id in {"Bookseller", "BooksellerTrade"}:
+        return "书摊"
+    if shop_id == "Casino":
+        return "赌场"
+    if shop_id == "VolcanoShop":
+        return "火山商店"
+    return "普通商店"
+
 # The builder does not evaluate GameStateQuery; it preserves every supported
 # predicate as a typed conditional term so the package can accurately state
 # what must be true without pretending it knows the player's current save.
@@ -955,6 +1003,39 @@ NON_SPAWNABLE_MONSTER_LOCATION_IDS = {
     "monster:Shadow-Guy",
     "monster:Skeleton-Warrior",
 }
+# 矿井层段（中文维基·矿井楼层表）：怪物出现的矿井楼层范围。
+# 只收录普通矿井有明确楼层说明的怪物；农场荒野、火山地牢等没有
+# 矿井楼层语义的怪物不在此表（用户文案中保留其实际出现地点）。
+# 楼层表 2026-08 核对的官方中文维基页面版本。
+WIKI_REVISION_AT = "2026-08-16T00:00:00+08:00"
+MONSTER_MINE_FLOORS: dict[str, str] = {
+    "monster:Green-Slime": "矿井 1-39 层",
+    "monster:Duggy": "矿井 1-39 层",
+    "monster:Bug": "矿井 1-39 层",
+    "monster:Rock-Crab": "矿井 1-39 层",
+    "monster:Grub": "矿井 1-39 层",
+    "monster:Fly": "矿井 1-39 层",
+    "monster:Bat": "矿井 31-39 层",
+    "monster:Stone-Golem": "矿井 31-39 层",
+    "monster:Frost-Jelly": "矿井 40-79 层",
+    "monster:Frost-Bat": "矿井 40-79 层",
+    "monster:Dust-Spirit": "矿井 40-79 层",
+    "monster:Ghost": "矿井 51-79 层",
+    "monster:Skeleton": "矿井 61-79 层",
+    "monster:Skeleton-Mage": "矿井 61-79 层",
+    "monster:Carbon-Ghost": "矿井 40-79 层",
+    "monster:Blue-Squid": "矿井 40-79 层",
+    "monster:Putrid-Ghost": "矿井 40-79 层",
+    "monster:Lava-Crab": "矿井 80-119 层",
+    "monster:Lava-Bat": "矿井 80-119 层",
+    "monster:Shadow-Brute": "矿井 80-119 层",
+    "monster:Shadow-Shaman": "矿井 80-119 层",
+    "monster:Shadow-Sniper": "矿井 80-119 层",
+    "monster:Metal-Head": "矿井 80-119 层",
+    "monster:Squid-Kid": "矿井 80-119 层",
+    "monster:Magma-Sparker": "矿井 80-119 层",
+    "monster:Magma-Sprite": "矿井 80-119 层",
+}
 # These legacy rows are ambient/non-combat records, not killable enemies. Their
 # old stat-catalogue drops cannot answer player loot in the current game.
 NON_COMBAT_MONSTER_DROP_IDS = {"monster:Cat", "monster:Crow", "monster:Frog"}
@@ -1211,6 +1292,10 @@ def project_card_actions(package: Schema5Package) -> None:
         "footwear": ("defense", "purchase_price"),
         "cooking_recipe": ("crafting_material_id",),
         "crafting_recipe": ("crafting_material_id",),
+        "quest": ("quest_type", "quest_objective", "quest_reward"),
+        "achievement": ("achievement_description",),
+        "bundle": ("bundle_area", "bundle_ingredients"),
+        "special_order": ("special_order_duration", "special_order_objective", "special_order_requester"),
     }
     updated = []
     for card in package.entity_cards:
@@ -1342,13 +1427,27 @@ def project_card_actions(package: Schema5Package) -> None:
                     actions.append(f"{label}：{values[0]}")
             elif slot.slot_key == "upgrade_price" and slot.integer_value is not None:
                 actions.append(f"升级：{slot.integer_value} 金币")
-            elif slot.slot_key in {"tool_kind", "tool_level", "primary_output", "unlock", "weapon_type"}:
+            elif slot.slot_key in {
+                "tool_kind", "tool_level", "primary_output", "unlock", "weapon_type",
+                "quest_type", "quest_objective", "quest_reward",
+                "achievement_description", "bundle_area", "bundle_ingredients",
+                "special_order_duration", "special_order_objective", "special_order_requester",
+            }:
                 label = {
                     "tool_kind": "类型",
                     "tool_level": "档位",
                     "primary_output": "产物",
                     "unlock": "解锁",
                     "weapon_type": "类型",
+                    "quest_type": "类型",
+                    "quest_objective": "目标",
+                    "quest_reward": "奖励",
+                    "achievement_description": "解锁",
+                    "bundle_area": "区域",
+                    "bundle_ingredients": "所需",
+                    "special_order_duration": "时限",
+                    "special_order_objective": "目标",
+                    "special_order_requester": "委托人",
                 }[slot.slot_key]
                 value = slot.text_value or next(
                     (
@@ -1924,6 +2023,13 @@ def add_typed_support_projections(
         game_version,
         official_release_binding,
     )
+    add_monster_floor_facts(
+        package,
+        entities,
+        source_documents,
+        source_locators,
+        game_version,
+    )
     add_purchase_offer_projections(
         package,
         entities,
@@ -1952,6 +2058,78 @@ def add_typed_support_projections(
     )
     package.source_documents = sorted(source_documents.values(), key=lambda item: item.id)
     package.source_locators = sorted(source_locators.values(), key=lambda item: item.id)
+
+
+def add_monster_floor_facts(
+    package: Schema5Package,
+    entities: list[NormalizedEntity],
+    source_documents: dict[str, Schema5SourceDocument],
+    source_locators: dict[str, Schema5SourceLocator],
+    game_version: str,
+) -> None:
+    """矿井层段（楼层）作为补充事实：玩家最关心怪物在哪一层出现。
+
+    数据来自星露谷官方中文维基的矿井楼层表，以 supplemental 来源区分于
+    官方运行时出现规则；没有楼层语义的怪物不生成该事实。
+    """
+    source_id = "source:supplemental:wiki-mine-floors"
+    source_documents.setdefault(
+        source_id,
+        Schema5SourceDocument(
+            id=source_id,
+            source_kind="supplemental",
+            title="星露谷官方中文维基 · 矿井楼层表",
+            game_version=game_version,
+            source_url="https://zh.stardewvalleywiki.com/矿井",
+            revision="zh-wiki-mines-floor-table-v1",
+            revision_at=WIKI_REVISION_AT,
+            platform="web",
+            language="zh-CN",
+            reviewed_at=WIKI_REVISION_AT,
+            review_status="approved",
+        ),
+    )
+    for entity in entities:
+        if entity.entity_type != "monster":
+            continue
+        floors = MONSTER_MINE_FLOORS.get(entity.id)
+        if floors is None:
+            continue
+        slot_id = f"fact:{entity.id}:floors"
+        if any(slot.id == slot_id for slot in package.fact_slots):
+            continue
+        locator_id = f"locator:supplemental:wiki-mine-floors:{stable_part(entity.id)}"
+        source_locators.setdefault(
+            locator_id,
+            Schema5SourceLocator(
+                id=locator_id,
+                source_document_id=source_id,
+                source_file="矿井",
+                record_key=entity.id,
+            ),
+        )
+        package.fact_slots.append(
+            Schema5FactSlot(
+                id=slot_id,
+                entity_id=entity.id,
+                slot_key="floors",
+                status="fixed",
+                value_type="text",
+                text_value=floors,
+            )
+        )
+        evidence_id = f"evidence:fact:{stable_part(slot_id)}"
+        package.evidence.append(
+            Schema5Evidence(
+                id=evidence_id,
+                source_locator_id=locator_id,
+                evidence_kind="supplemental",
+                transformation_rule="wiki-mine-floors-to-player-facts-v1",
+            )
+        )
+        package.claim_evidence.append(
+            Schema5ClaimEvidence(slot_id, evidence_id, "fact_slot")
+        )
 
 
 def add_runtime_monster_location_projections(
@@ -2359,13 +2537,42 @@ def add_shop_projections(
         )
         if owner_name is not None:
             slot_key = f"fact:{entity_id}:owner"
-            add_support_fact_item(
+            owner_item = add_support_fact_item(
                 package, entity_id, "owner", "text", text_value=owner_name,
                 scope_id=f"shop:{stable_part(entity_id)}", condition_set_id=None,
                 ordinal=ordinals_by_slot[slot_key], locator_id=locator_id,
                 transformation_rule="official-shop-owner-v1",
             )
             ordinals_by_slot[slot_key] += 1
+            add_support_facet(
+                package,
+                entity_id=entity_id,
+                family="shop_owner",
+                item=owner_item,
+                condition_set_id=None,
+                locator_id=locator_id,
+                transformation_rule="official-shop-owner-v1",
+            )
+        shop_kind_label = classify_shop_kind(shop_id)
+        if shop_kind_label is not None:
+            kind_scope = f"shop-kind:{stable_part(entity_id)}"
+            kind_item = add_support_fact_item(
+                package, entity_id, "shop_kind", "text", text_value=shop_kind_label,
+                scope_id=kind_scope, condition_set_id=None,
+                ordinal=ordinals_by_slot[f"fact:{entity_id}:shop_kind"],
+                locator_id=locator_id,
+                transformation_rule="official-shop-kind-v1",
+            )
+            ordinals_by_slot[f"fact:{entity_id}:shop_kind"] += 1
+            add_support_facet(
+                package,
+                entity_id=entity_id,
+                family="shop_kind",
+                item=kind_item,
+                condition_set_id=None,
+                locator_id=locator_id,
+                transformation_rule="official-shop-kind-v1",
+            )
         hours_condition_id: str | None = None
         if shop_id.startswith(("Festival_", "DesertFestival_")):
             hours_text = "仅节日当天开放"
@@ -2520,6 +2727,8 @@ def add_shop_projections(
                 )
                 ordinals_by_slot[slot_key] += 1
             offer_ordinal += 1
+        if offer_ordinal > 0:
+            add_shop_offer_count_facet(package, entity_id, offer_ordinal, locator_id)
     package.source_documents = sorted(source_documents.values(), key=lambda item: item.id)
     package.source_locators = sorted(source_locators.values(), key=lambda item: item.id)
 
@@ -4223,6 +4432,47 @@ def season_label(value: object) -> str | None:
     return labels.get(value.strip().casefold())
 
 
+def add_shop_offer_count_facet(
+    package: Schema5Package,
+    entity_id: str,
+    offer_count: int,
+    locator_id: str,
+) -> None:
+    """商店商品数作为浏览 facet（列表卡显示「N 件商品」）。
+
+    facet 证据直接以事实槽为输入 claim（商品项本身已有事实证据），
+    避免引入不存在的 fact_item claim。
+    """
+    family = "shop_offer_count"
+    group_id = f"facet-group:{entity_id}:{family}"
+    package.facet_groups.append(
+        Schema5FacetGroup(group_id, entity_id, family, "fixed")
+    )
+    facet_id = f"facet:{entity_id}:{family}:count"
+    package.facets.append(
+        Schema5Facet(
+            id=facet_id,
+            group_id=group_id,
+            scope_family=family,
+            scope_id=f"shop:{stable_part(entity_id)}",
+            value_type="integer",
+            integer_value=offer_count,
+            claim_status="fixed",
+        )
+    )
+    evidence_id = f"evidence:facet:{stable_part(facet_id)}"
+    package.evidence.append(
+        Schema5Evidence(
+            id=evidence_id,
+            source_locator_id=locator_id,
+            evidence_kind="derived",
+            transformation_rule="official-shop-offers-to-browse-facet-v1",
+            input_claim_id=f"fact:{entity_id}:shop_offer_item",
+        )
+    )
+    package.claim_evidence.append(Schema5ClaimEvidence(facet_id, evidence_id, "facet"))
+
+
 def add_support_facet(
     package: Schema5Package,
     *,
@@ -4758,7 +5008,7 @@ def to_schema_entity(entity: NormalizedEntity) -> Schema5Entity:
         category=entity.category,
         translation_status=entity.translation_status,
         aliases=tuple(entity.aliases),
-        sort_key=entity.name_zh or entity.id,
+        sort_key=entity_sort_key(entity),
     )
 
 
@@ -4767,8 +5017,19 @@ def to_card(entity: NormalizedEntity) -> Schema5EntityCard:
         entity_id=entity.id,
         identity_summary=entity.description_zh or entity.description_en,
         category_label=entity.category,
-        sort_key=entity.name_zh or entity.id,
+        sort_key=entity_sort_key(entity),
     )
+
+
+def entity_sort_key(entity: NormalizedEntity) -> str:
+    """默认按中文名排序；商店按性质优先级前缀，让普通商店排在节日商店前。"""
+    name = entity.name_zh or entity.id
+    if entity.entity_type != "shop":
+        return name
+    shop_id = entity.game_id or entity.id.split(":", 1)[1]
+    kind = classify_shop_kind(shop_id)
+    priority = SHOP_KIND_PRIORITY.get(kind, 2)
+    return f"{priority:02d}-{name}"
 
 
 def source_for_entity(
@@ -5383,6 +5644,277 @@ def stable_entity_reference(
     return candidates[0] if len(candidates) == 1 else None
 
 
+QUEST_TYPE_ZH = {
+    "Basic": "基础任务",
+    "Location": "剧情任务",
+    "ItemDelivery": "送货任务",
+    "ItemHarvest": "收获任务",
+    "LostItem": "寻物任务",
+    "SecretLostItem": "秘密寻物任务",
+    "Monster": "讨伐任务",
+    "Fishing": "钓鱼任务",
+    "Building": "建造任务",
+    "Crafting": "制作任务",
+    "Social": "社交任务",
+}
+
+SPECIAL_ORDER_DURATION_ZH = {
+    "Week": "一周",
+    "TwoWeeks": "两周",
+    "Month": "一个月",
+}
+
+# 特殊订单委托人：不在可浏览村民目录中的官方 NPC 中文名
+# （来自官方 Strings 本地化，与村民条目一致）。
+SPECIAL_ORDER_REQUESTER_ZH = {
+    "Gunther": "冈瑟",
+    "Marlon": "马龙",
+    "Qi": "齐先生",
+    "Mr. Qi": "齐先生",
+    "Morris": "莫里斯",
+    "Gil": "吉尔",
+    "Gus": "格斯",
+}
+
+# 收集包区域：官方 Bundles 键前缀（"Pantry/0" → "茶水间"）。
+BUNDLE_AREA_ZH = {
+    "pantry": "茶水间",
+    "crafts room": "工艺室",
+    "fish tank": "鱼缸",
+    "boiler room": "锅炉房",
+    "bulletin board": "布告栏",
+    "abandoned joja mart": "失踪的",
+}
+
+
+def quest_facts(
+    entity: NormalizedEntity,
+    attributes: dict[str, Any],
+    by_id: dict[str, NormalizedEntity] | None = None,
+) -> list[Schema5FactSlot]:
+    """任务：类型/目标/奖励/可重复。目标与描述来自官方本地的中文本地化记录。
+
+    探险家公会讨伐任务（MonsterSlayerQuests）使用另一套字段：Targets 是
+    怪物列表，Count 是目标数量，RewardItemPrice 是金币奖励。
+    """
+    quest_type = text_value(attributes.get("questType"))
+    facts: list[Schema5FactSlot] = []
+    if quest_type is not None:
+        facts.append(
+            fixed_fact(
+                entity,
+                "quest_type",
+                "text",
+                text_value=QUEST_TYPE_ZH.get(quest_type, quest_type),
+            )
+        )
+    else:
+        targets = attributes.get("Targets")
+        count = attributes.get("Count")
+        if isinstance(targets, list) and targets:
+            facts.append(
+                fixed_fact(
+                    entity,
+                    "quest_type",
+                    "text",
+                    text_value="讨伐任务",
+                )
+            )
+            count_text = f"共 {count} 只" if isinstance(count, int) and count > 0 else ""
+            facts.append(
+                fixed_fact(
+                    entity,
+                    "quest_objective",
+                    "text",
+                    text_value=(
+                        f"消灭{count_text}目标怪物（{targets_label(targets, by_id or {})}）"
+                    ),
+                )
+            )
+        reward_price = attributes.get("RewardItemPrice")
+        if isinstance(reward_price, int) and reward_price > 0:
+            facts.append(
+                fixed_fact(
+                    entity,
+                    "quest_reward",
+                    "text",
+                    text_value=f"{reward_price} 金币",
+                )
+            )
+    objective = text_value(attributes.get("questObjective"))
+    if objective is not None:
+        facts.append(fixed_fact(entity, "quest_objective", "text", text_value=objective))
+    reward_parts = []
+    reward_item = text_value(attributes.get("questRewardItemId"))
+    if reward_item is not None and reward_item != "-1":
+        reward_parts.append(f"物品奖励（{reward_item}）")
+    reward_gold = attributes.get("questRewardGold")
+    if isinstance(reward_gold, int) and reward_gold > 0:
+        reward_parts.append(f"{reward_gold} 金币")
+    if reward_parts:
+        facts.append(
+            fixed_fact(entity, "quest_reward", "text", text_value="、".join(reward_parts))
+        )
+    repeatable = attributes.get("questRepeatable")
+    if isinstance(repeatable, bool):
+        facts.append(
+            fixed_fact(
+                entity,
+                "quest_repeatable",
+                "boolean",
+                boolean_value=repeatable,
+            )
+        )
+    return facts
+
+
+def targets_label(targets: list[object], by_id: dict[str, NormalizedEntity]) -> str:
+    """讨伐目标怪物列表的中文标签（去重）。"""
+    names: list[str] = []
+    seen: set[str] = set()
+    for target in targets:
+        value = str(target).strip()
+        if not value:
+            continue
+        reference = f"monster:{value.replace(' ', '-')}"
+        target_entity = by_id.get(reference)
+        label = (
+            target_entity.name_zh
+            if target_entity is not None and target_entity.name_zh
+            else value
+        )
+        if label in seen:
+            continue
+        seen.add(label)
+        names.append(label)
+    return "、".join(names[:6]) + ("…" if len(names) > 6 else "")
+
+
+def achievement_facts(
+    entity: NormalizedEntity, attributes: dict[str, Any]
+) -> list[Schema5FactSlot]:
+    """成就：解锁条件与隐藏标记。描述即玩家可见的解锁条件。"""
+    facts: list[Schema5FactSlot] = []
+    description = text_value(attributes.get("achievementDescription"))
+    if description is not None:
+        facts.append(
+            fixed_fact(
+                entity, "achievement_description", "text", text_value=description
+            )
+        )
+    secret = attributes.get("achievementSecret")
+    if isinstance(secret, bool):
+        facts.append(
+            fixed_fact(
+                entity, "achievement_secret", "boolean", boolean_value=secret
+            )
+        )
+    return facts
+
+
+def bundle_facts(
+    entity: NormalizedEntity,
+    attributes: dict[str, Any],
+    by_id: dict[str, NormalizedEntity] | None,
+) -> list[Schema5FactSlot]:
+    """收集包：区域与所需物品。"""
+    facts: list[Schema5FactSlot] = []
+    area = bundle_area_label(entity)
+    if area is not None:
+        facts.append(fixed_fact(entity, "bundle_area", "text", text_value=area))
+    ingredients = attributes.get("BundleIngredients")
+    if isinstance(ingredients, list) and ingredients:
+        names = [
+            bundle_ingredient_label(item, by_id or {})
+            for item in ingredients
+            if isinstance(item, dict)
+        ]
+        names = [name for name in names if name]
+        if names:
+            facts.append(
+                fixed_fact(
+                    entity, "bundle_ingredients", "text", text_value="、".join(names)
+                )
+            )
+    return facts
+
+
+def bundle_area_label(entity: NormalizedEntity) -> str | None:
+    key = (entity.game_id or "").split("/", maxsplit=1)[0].strip().casefold()
+    return BUNDLE_AREA_ZH.get(key)
+
+
+def bundle_ingredient_label(
+    item: dict[str, object], by_id: dict[str, NormalizedEntity]
+) -> str | None:
+    item_id = text_value(item.get("itemId"))
+    if item_id is None:
+        return None
+    reference = f"object:{item_id}"
+    target = by_id.get(reference)
+    name = target.name_zh if target is not None else item_id
+    quantity = item.get("quantity")
+    suffix = f"×{quantity}" if isinstance(quantity, int) and quantity > 1 else ""
+    return f"{name}{suffix}"
+
+
+def special_order_facts(
+    entity: NormalizedEntity,
+    attributes: dict[str, Any],
+    by_id: dict[str, NormalizedEntity] | None = None,
+) -> list[Schema5FactSlot]:
+    """特殊订单：委托人、时限与目标摘要。
+
+    委托人从官方 Requester 解析为已发布村民的中文名；目标文本来自
+    本地化后的官方描述，占位符未解析时回退到描述。
+    """
+    facts: list[Schema5FactSlot] = []
+    requester = text_value(attributes.get("Requester"))
+    if requester is not None and requester != "None":
+        requester_zh = SPECIAL_ORDER_REQUESTER_ZH.get(requester)
+        if requester_zh is None and by_id is not None:
+            villager = by_id.get(f"villager:{requester}")
+            if villager is not None and villager.name_zh:
+                requester_zh = villager.name_zh
+        facts.append(
+            fixed_fact(
+                entity, "special_order_requester", "text", text_value=requester_zh or requester
+            )
+        )
+    duration = text_value(attributes.get("Duration"))
+    if duration is not None:
+        facts.append(
+            fixed_fact(
+                entity,
+                "special_order_duration",
+                "text",
+                text_value=SPECIAL_ORDER_DURATION_ZH.get(duration, duration),
+            )
+        )
+    objectives = attributes.get("Objectives")
+    objective_texts: list[str] = []
+    if isinstance(objectives, list):
+        for item in objectives:
+            if not isinstance(item, dict):
+                continue
+            value = text_value(item.get("Text"))
+            if value and not value.startswith("[") and value not in objective_texts:
+                objective_texts.append(value)
+    description = text_value(attributes.get("Text"))
+    if not objective_texts and description and not description.startswith("["):
+        objective_texts.append(description)
+    if objective_texts:
+        facts.append(
+            fixed_fact(
+                entity,
+                "special_order_objective",
+                "text",
+                text_value="；".join(objective_texts),
+            )
+        )
+    return facts
+
+
 def typed_facts(
     entity: NormalizedEntity,
     *,
@@ -5390,6 +5922,14 @@ def typed_facts(
 ) -> list[Schema5FactSlot]:
     attributes = structured_attributes(entity)
     facts: list[Schema5FactSlot] = []
+    if entity.entity_type == "quest":
+        facts.extend(quest_facts(entity, attributes, by_id))
+    if entity.entity_type == "achievement":
+        facts.extend(achievement_facts(entity, attributes))
+    if entity.entity_type == "bundle":
+        facts.extend(bundle_facts(entity, attributes, by_id))
+    if entity.entity_type == "special_order":
+        facts.extend(special_order_facts(entity, attributes, by_id))
     if entity.entity_type == "villager":
         if isinstance(attributes.get("CanBeRomanced"), bool):
             facts.append(

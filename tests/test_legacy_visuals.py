@@ -67,7 +67,10 @@ def test_legacy_visual_records_use_their_real_sprite_metadata(tmp_path: Path) ->
     entities = normalized_visual_entities()
     by_id = {entity.id: entity for entity in entities}
 
-    assert by_id["achievement:0"].extra_json["imageRect"] == [192, 128, 64, 64]
+    assert (
+        by_id["achievement:0"].extra_json.get("imageAvailability") == "not_applicable"
+    )
+    assert "imageRect" not in by_id["achievement:0"].extra_json
     assert by_id["villager:Abigail"].extra_json["imageRect"] == [0, 0, 64, 64]
     assert by_id["object:1"].extra_json["imageGridCellSize"] == [16, 16]
     assert by_id["footwear:1"].extra_json["spriteIndex"] == 1
@@ -81,7 +84,6 @@ def test_legacy_visual_records_use_their_real_sprite_metadata(tmp_path: Path) ->
 
     assert result.errors == []
     assert image_sizes(tmp_path / "output") == {
-        "achievement-0.webp": (64, 64),
         "big_craftable-1.webp": (16, 32),
         "object-1.webp": (16, 16),
         "footwear-1.webp": (16, 16),
@@ -180,12 +182,13 @@ def test_achievements_share_the_official_collections_cursor_tile() -> None:
         categories={},
     )
 
-    assert {entity.extra_json["imageSource"] for entity in entities} == {
-        "LooseSprites/Cursors.png"
-    }
-    assert {tuple(entity.extra_json["imageRect"]) for entity in entities} == {
-        (192, 128, 64, 64)
-    }
+    # 官方对全部成就共用同一枚光标贴图，没有独立辨识价值；
+    # 标记为无官方独立视觉，由 App 用语义图标与解锁条件呈现。
+    assert all(
+        entity.extra_json.get("imageAvailability") == "not_applicable"
+        for entity in entities
+    )
+    assert all("imageSource" not in entity.extra_json for entity in entities)
 
 
 def test_legacy_monster_texture_aliases_match_official_reused_assets() -> None:

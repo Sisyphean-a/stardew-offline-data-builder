@@ -63,15 +63,11 @@ def apply_special_visual_metadata(
     fields: list[str] | None,
 ) -> bool:
     if entity_type == "achievement":
-        attributes.update(
-            {
-                "imageSource": "LooseSprites/Cursors.png",
-                # CollectionsPage uses the shared standard cursor tile 25 for every achievement.
-                "imageRect": [192, 128, 64, 64],
-                "imageMode": "sprite",
-                "imageRequired": True,
-            }
-        )
+        # 官方收藏页对全部成就共用同一枚光标贴图（CollectionsPage 使用
+        # 标准光标 tile 25），没有按成就区分的独立图标；同一枚占位图对
+        # 玩家没有辨识价值，因此标记为无官方独立视觉，由 App 用语义图标
+        # 与解锁条件呈现。
+        attributes["imageAvailability"] = "not_applicable"
         return True
     if entity_type == "monster":
         apply_monster_visual_metadata(attributes, source_id)

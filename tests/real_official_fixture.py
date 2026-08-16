@@ -51,7 +51,9 @@ def create_real_layout(tmp_path: Path) -> Path:
     add_official_support_data(unpacked_dir)
     add_localization_strings(unpacked_dir)
     write_image(unpacked_dir / "Maps" / "springobjects.png", (32, 16))
-    write_image(unpacked_dir / "TileSheets" / "crops.png", (16, 16))
+    # 作物视觉按 crops.png 的真实 16x32 单元格裁切（SpriteIndex 行、成熟相位），
+    # 测试图至少需要容纳第一个单元格右侧的相位偏移。
+    write_image(unpacked_dir / "TileSheets" / "crops.png", (128, 64))
     write_image(unpacked_dir / "Portraits" / "Abigail.png", (32, 64))
     write_image(unpacked_dir / "Characters" / "Monsters" / "Green Slime.png", (64, 280))
     return game_dir

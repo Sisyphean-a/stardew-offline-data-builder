@@ -30,25 +30,25 @@ def test_failed_required_image_blocks_package_and_reports_failure(tmp_path: Path
     assert summary["success"] is False
     assert summary["quality"]["status"] == "failed"
     assert manifest["quality"]["status"] == "failed"
-    assert errors[0]["entity_id"] == "achievement:0"
+    assert errors[0]["entity_id"] == "footwear:504"
     assert not (output_dir / "stardew-zh-cn.svdata").exists()
 
 
 def test_failed_rebuild_quarantines_previous_package(tmp_path: Path) -> None:
     game_dir = create_game_with_missing_required_image(tmp_path)
     output_dir = tmp_path / "output"
-    achievements = game_dir / "Content (unpacked)" / "Data" / "Achievements.json"
-    translated = achievements.with_name("Achievements.zh-CN.json")
+    boots = game_dir / "Content (unpacked)" / "Data" / "Boots.json"
+    translated = boots.with_name("Boots.zh-CN.json")
 
-    restore_fixture_achievement(game_dir / "Content (unpacked)")
+    restore_fixture_footwear(game_dir / "Content (unpacked)")
     first = runner.invoke(
         app, ["build-v4-legacy", "--game-dir", str(game_dir), "--output", str(output_dir)]
     )
-    achievements.write_text(
-        json.dumps({"0": "Greenhorn^Earn 15,000g.^true^-1^18"}), encoding="utf-8"
+    boots.write_text(
+        json.dumps({"504": "Sneakers/A little flimsy./50/1/0/0/Sneakers"}), encoding="utf-8"
     )
     translated.write_text(
-        json.dumps({"0": "新手^赚取 15,000 金。^true^-1^18"}, ensure_ascii=False),
+        json.dumps({"504": "Sneakers/有点单薄。/50/1/0/0/运动鞋"}, ensure_ascii=False),
         encoding="utf-8",
     )
     second = runner.invoke(
@@ -65,21 +65,21 @@ def test_missing_required_entity_type_blocks_build(tmp_path: Path) -> None:
     game_dir = create_game_with_missing_required_image(tmp_path)
     output_dir = tmp_path / "output"
     data_dir = game_dir / "Content (unpacked)" / "Data"
-    (data_dir / "Achievements.json").unlink()
-    (data_dir / "Achievements.zh-CN.json").unlink()
+    (data_dir / "Boots.json").unlink()
+    (data_dir / "Boots.zh-CN.json").unlink()
 
     result = runner.invoke(
         app, ["build-v4-legacy", "--game-dir", str(game_dir), "--output", str(output_dir)]
     )
 
     assert result.exit_code == EXIT_SOURCE_DATA
-    assert "achievement" in result.stdout
+    assert "footwear" in result.stdout
     assert not (output_dir / "stardew-zh-cn.svdata").exists()
 
 
 def test_missing_nonvisual_extended_type_blocks_build(tmp_path: Path) -> None:
     game_dir = create_game_with_missing_required_image(tmp_path)
-    restore_fixture_achievement(game_dir / "Content (unpacked)")
+    restore_fixture_footwear(game_dir / "Content (unpacked)")
     data_dir = game_dir / "Content (unpacked)" / "Data"
     for path in (data_dir / "fixture-monster.en.json", data_dir / "fixture-monster.zh-CN.json"):
         path.unlink()
@@ -98,7 +98,7 @@ def test_invalid_manual_name_override_blocks_package(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name_zh: str
 ) -> None:
     game_dir = create_game_with_missing_required_image(tmp_path)
-    restore_fixture_achievement(game_dir / "Content (unpacked)")
+    restore_fixture_footwear(game_dir / "Content (unpacked)")
     overrides_path = tmp_path / "overrides.json"
     write_overrides(overrides_path, {"name_zh": name_zh})
     monkeypatch.setattr("builder.commands.build.OVERRIDES_PATH", overrides_path)
@@ -142,7 +142,7 @@ def test_early_source_failure_quarantines_previous_package(tmp_path: Path) -> No
     game_dir = create_game_with_missing_required_image(tmp_path)
     output_dir = tmp_path / "output"
 
-    restore_fixture_achievement(game_dir / "Content (unpacked)")
+    restore_fixture_footwear(game_dir / "Content (unpacked)")
     first = runner.invoke(
         app, ["build-v4-legacy", "--game-dir", str(game_dir), "--output", str(output_dir)]
     )
@@ -164,7 +164,7 @@ def test_early_source_failure_quarantines_previous_package(tmp_path: Path) -> No
 
 def test_failed_fixture_build_writes_unpackageable_metadata(tmp_path: Path, monkeypatch) -> None:
     game_dir = create_game_with_missing_required_image(tmp_path / "previous")
-    restore_fixture_achievement(game_dir / "Content (unpacked)")
+    restore_fixture_footwear(game_dir / "Content (unpacked)")
     output_dir = tmp_path / "output"
     initial = runner.invoke(
         app,
@@ -174,7 +174,7 @@ def test_failed_fixture_build_writes_unpackageable_metadata(tmp_path: Path, monk
     fixture_root = tmp_path / "fixture"
     unpacked_dir = fixture_root / "Content (unpacked)"
     shutil.copytree(Path("tests/fixtures/game-data/Content (unpacked)"), unpacked_dir)
-    write_missing_required_achievement(unpacked_dir)
+    write_missing_required_footwear(unpacked_dir)
     monkeypatch.setattr("builder.commands.build.DEFAULT_FIXTURE_ROOT", fixture_root)
 
     build = runner.invoke(app, ["build-fixture", "--output", str(output_dir)])
@@ -200,7 +200,7 @@ def test_successful_fixture_output_is_not_packageable(tmp_path: Path) -> None:
 
 def test_successful_fixture_quarantines_existing_package(tmp_path: Path) -> None:
     game_dir = create_game_with_missing_required_image(tmp_path / "previous")
-    restore_fixture_achievement(game_dir / "Content (unpacked)")
+    restore_fixture_footwear(game_dir / "Content (unpacked)")
     output_dir = tmp_path / "output"
 
     initial = runner.invoke(
@@ -228,35 +228,35 @@ def create_game_with_missing_required_image(tmp_path: Path) -> Path:
         unpacked_dir,
     )
     add_required_entity_baseline(unpacked_dir)
-    write_missing_required_achievement(unpacked_dir)
+    write_missing_required_footwear(unpacked_dir)
     return game_dir
 
 
-def write_missing_required_achievement(unpacked_dir: Path) -> None:
+def write_missing_required_footwear(unpacked_dir: Path) -> None:
     data_dir = unpacked_dir / "Data"
-    for filename in ("Achievements.en.json", "Achievements.zh-CN.json"):
+    for filename in ("Boots.en.json", "Boots.zh-CN.json"):
         (data_dir / filename).unlink(missing_ok=True)
-    (data_dir / "Achievements.json").write_text(
-        json.dumps({"0": "Greenhorn^Earn 15,000g.^true^-1^18"}),
+    (data_dir / "Boots.json").write_text(
+        json.dumps({"504": "Sneakers/A little flimsy./50/1/0/0/Sneakers"}),
         encoding="utf-8",
     )
-    (data_dir / "Achievements.zh-CN.json").write_text(
-        json.dumps({"0": "新手^赚取 15,000 金。^true^-1^18"}, ensure_ascii=False),
+    (data_dir / "Boots.zh-CN.json").write_text(
+        json.dumps({"504": "Sneakers/有点单薄。/50/1/0/0/运动鞋"}, ensure_ascii=False),
         encoding="utf-8",
     )
 
 
-def restore_fixture_achievement(unpacked_dir: Path) -> None:
+def restore_fixture_footwear(unpacked_dir: Path) -> None:
     fixture_data = Path("tests/fixtures/game-data/Content (unpacked)/Data")
     data_dir = unpacked_dir / "Data"
-    for filename in ("Achievements.json", "Achievements.zh-CN.json"):
+    for filename in ("Boots.json", "Boots.zh-CN.json"):
         (data_dir / filename).unlink(missing_ok=True)
-    for filename in ("Achievements.en.json", "Achievements.zh-CN.json"):
+    for filename in ("Boots.en.json", "Boots.zh-CN.json"):
         shutil.copy2(fixture_data / filename, data_dir / filename)
 
 
 def write_overrides(path: Path, override: dict[str, object]) -> None:
-    payload = {"entity_overrides": {"achievement:0": override}}
+    payload = {"entity_overrides": {"footwear:504": override}}
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 

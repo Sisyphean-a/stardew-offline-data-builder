@@ -8,7 +8,11 @@ from builder.models import DiscoveredJsonFile, RawEntity
 from builder.parsers.localization import build_raw_entities_from_entries, optional_text
 from builder.parsers.official_assets import LOCALE_SUFFIX, unwrap_content
 from builder.parsers.official_visuals import apply_image_metadata
-from builder.pipeline.official_values import parse_bundle_ingredients, parse_ingredients
+from builder.pipeline.official_values import (
+    parse_bundle_ingredients,
+    parse_int,
+    parse_ingredients,
+)
 
 
 def parse_official_file(
@@ -165,8 +169,11 @@ def add_legacy_structured_metadata(
                     "questDescription": legacy_text(fields, 2),
                     "questObjective": legacy_text(fields, 3),
                     "questLocation": legacy_text(fields, 4),
-                    "questReward": legacy_int(fields, 5),
-                    "questRepeatable": legacy_bool(fields, 7),
+                    # 官方 Quests 记录：第 5 段是奖励物品 ID（-1 表示无），
+                    # 第 6 段是金币奖励，第 8 段是是否可重复。
+                    "questRewardItemId": legacy_text(fields, 5),
+                    "questRewardGold": legacy_int(fields, 6),
+                    "questRepeatable": legacy_bool(fields, 8),
                 }
             )
         )
@@ -232,6 +239,10 @@ def add_legacy_structured_metadata(
         ingredients = parse_bundle_ingredients(fields[2] if len(fields) > 2 else None)
         if ingredients:
             attributes["BundleIngredients"] = ingredients
+        # 官方 Bundles 记录：第 1 段是奖励物品（"类型 ID 数量"，如 "O 465 20"）。
+        rewards = parse_bundle_rewards(fields[1] if len(fields) > 1 else None)
+        if rewards:
+            attributes["BundleRewards"] = rewards
     elif entity_type == "villager_gift":
         # NPCGiftTastes 记录为「反应台词/物品列表」交错格式：台词占偶数位，
         # 物品列表按 喜爱/喜欢/一般/讨厌/不喜欢 顺序占奇数位 1/3/5/7/9
@@ -246,6 +257,19 @@ def add_legacy_structured_metadata(
         schedule = parse_legacy_schedule(fields)
         if schedule:
             attributes["ScheduleEntries"] = schedule
+
+
+def parse_bundle_rewards(value: object) -> list[dict[str, object]] | None:
+    """Bundle reward tokens: "O 465 20" / "BO 10 1" (type, id, quantity)."""
+    if not isinstance(value, str):
+        return None
+    parts = value.split()
+    if len(parts) != 3:
+        return None
+    quantity = parse_int(parts[2])
+    if quantity is None:
+        return None
+    return [{"itemId": parts[1], "quantity": quantity}]
 
 
 def parse_legacy_schedule(fields: list[str]) -> list[dict[str, object]]:

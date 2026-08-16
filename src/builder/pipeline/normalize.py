@@ -166,9 +166,16 @@ def build_normalized_entity(
     name_zh = fallback_name(primary, chinese_name or pick_group_value(english, [], "name"))
     extra_json = dict(primary.attributes)
     extra_json["_provenance"] = build_provenance(group)
+    # zh-CN 是发布语言：结构化文本（任务目标、成就解锁条件等）优先使用
+    # 中文本地化记录，结构字段（ID/数值/枚举）在两种语言中保持一致；
+    # 缺少 zh-CN 记录时回退到主记录。
+    preferred = next(
+        (entity for entity in sorted(chinese, key=lambda item: -len(item.attributes))),
+        primary,
+    )
     source_attributes = {
         key: value
-        for key, value in primary.attributes.items()
+        for key, value in preferred.attributes.items()
         if key not in {"legacyFields", "legacyValue", "officialDerived"}
     }
     return NormalizedEntity(

@@ -21,6 +21,8 @@ def apply_image_metadata(
         return
     if entity_type == "villager":
         apply_villager_visual_metadata(attributes, texture, internal_name)
+    elif entity_type == "crop":
+        apply_crop_visual_metadata(attributes)
     elif apply_special_visual_metadata(attributes, entity_type, source_id, fields):
         return
     elif isinstance(texture, str) and texture:
@@ -37,6 +39,34 @@ def apply_image_metadata(
                     "imageMode": "sprite",
                 }
             )
+
+
+def apply_crop_visual_metadata(attributes: dict[str, Any]) -> None:
+    """作物贴图布局：每株作物占用 16x32 单元格，SpriteIndex 是行号。
+
+    crops.png 的单元格并非普通 16x16 网格：SpriteIndex 为偶数时作物占据
+    x∈[0,112] 的 16x32 区域，为奇数时整体右移 128px（第二列）。成熟植株
+    的相位下标：可再收作物固定为 6（dayOfCurrentPhase<=0），一次性作物为
+    DaysInPhase 数量 + 1（对应游戏 getSourceRect 的 currentPhase+1）。
+    """
+    texture = attributes.get("Texture") or attributes.get("TextureName")
+    sprite_index = attributes.get("SpriteIndex")
+    days = attributes.get("DaysInPhase")
+    regrow = attributes.get("RegrowDays")
+    if (
+        not isinstance(texture, str)
+        or not texture
+        or not isinstance(sprite_index, int)
+        or sprite_index < 0
+        or not isinstance(days, list)
+        or not days
+    ):
+        return
+    phase_index = 6 if (isinstance(regrow, int) and regrow > 0) else len(days) + 1
+    x = phase_index * 16 + (128 if sprite_index % 2 else 0)
+    y = (sprite_index // 2) * 32
+    attributes["imageSource"] = texture.replace("\\", "/") + ".png"
+    attributes["imageRect"] = [x, y, 16, 32]
 
 
 def apply_tool_visual_metadata(attributes: dict[str, Any], texture: object) -> None:

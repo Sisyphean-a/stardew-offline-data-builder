@@ -129,18 +129,19 @@ def test_real_legacy_visual_records_build_with_required_images(tmp_path: Path) -
         "big_craftable:0": "小桶",
         "furniture:0": "橡木椅",
     }
+    # 成就没有独立官方图标（官方共用同一光标贴图），不再物化占位图。
     assert all(
         (output_dir / "images" / filename).exists()
         for filename in (
-            "achievement-0.webp",
             "footwear-504.webp",
             "big_craftable-0.webp",
             "furniture-0.webp",
             "monster-Green-Slime.webp",
         )
     )
-    assert coverage["images"]["expected"] == 5
-    assert coverage["images"]["materialized"] == 5
+    assert not (output_dir / "images" / "achievement-0.webp").exists()
+    assert coverage["images"]["expected"] == 4
+    assert coverage["images"]["materialized"] == 4
     assert errors == []
     assert (output_dir / "stardew-zh-CN.svdata").exists()
 
@@ -165,13 +166,13 @@ def test_standalone_package_rejects_missing_required_image(tmp_path: Path) -> No
     )
     package_path = output_dir / "stardew-zh-cn.svdata"
     package_hash = package_path.read_bytes()
-    (output_dir / "images" / "achievement-0.webp").unlink()
+    (output_dir / "images" / "footwear-504.webp").unlink()
 
     package = runner.invoke(app, ["package", "--output", str(output_dir)])
 
     assert initial.exit_code == 0, initial.output
     assert package.exit_code == EXIT_PACKAGE
-    assert "图片文件缺失：achievement:0" in package.stdout
+    assert "图片文件缺失：footwear:504" in package.stdout
     assert package_path.read_bytes() == package_hash
 
 
