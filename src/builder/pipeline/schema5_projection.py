@@ -5688,7 +5688,15 @@ BUNDLE_AREA_ZH = {
     "boiler room": "锅炉房",
     "bulletin board": "布告栏",
     "abandoned joja mart": "失踪的",
+    "vault": "金库",
 }
+
+
+def strip_runtime_tokens(value: str) -> str:
+    """移除官方文本中的运行时模板令牌（{Crop:TextPlural} 等）。"""
+    cleaned = re.sub(r"\{[^}]*\}", "", value)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ；，、")
+    return cleaned
 
 
 def quest_facts(
@@ -5845,7 +5853,15 @@ def bundle_facts(
 
 def bundle_area_label(entity: NormalizedEntity) -> str | None:
     key = (entity.game_id or "").split("/", maxsplit=1)[0].strip().casefold()
-    return BUNDLE_AREA_ZH.get(key)
+    label = BUNDLE_AREA_ZH.get(key)
+    if label is not None:
+        return label
+    # 社区中心房间级收集包（工艺室/茶水间/鱼缸/锅炉房/布告栏）：
+    # 官方 RandomBundles 的 AreaName 即区域名。
+    area_name = text_value(structured_attributes(entity).get("AreaName"))
+    if area_name is not None:
+        return BUNDLE_AREA_ZH.get(area_name.strip().casefold()) or area_name
+    return None
 
 
 def bundle_ingredient_label(
@@ -5904,16 +5920,25 @@ def special_order_facts(
             value = text_value(item.get("Text"))
             if value and not value.startswith("[") and value not in objective_texts:
                 objective_texts.append(value)
-    description = text_value(attributes.get("Text"))
-    if not objective_texts and description and not description.startswith("["):
-        objective_texts.append(description)
-    if objective_texts:
+    if not objective_texts:
+        # 官方 Objectives/Text 常为本地化占位符（[Willy_Text] 等），
+        # 回退到解析阶段已本地化的官方描述；运行时模板令牌（{...}）
+        # 属于技术占位，离线图鉴不展示。
+        description = entity.description_zh or entity.description_en
+        if description:
+            objective_texts.append(description)
+    cleaned = [
+        strip_runtime_tokens(value)
+        for value in objective_texts
+        if strip_runtime_tokens(value)
+    ]
+    if cleaned:
         facts.append(
             fixed_fact(
                 entity,
                 "special_order_objective",
                 "text",
-                text_value="；".join(objective_texts),
+                text_value="；".join(cleaned),
             )
         )
     return facts
