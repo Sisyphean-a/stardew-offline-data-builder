@@ -2406,6 +2406,8 @@ def add_purchase_offer_projections(
                 **price,
             }
             dynamic_reason = out_of_season_price_rule(offer)
+            if dynamic_reason is None and price.get("profitMargin"):
+                dynamic_reason = "runtime-profit-margin"
             if dynamic_reason is not None:
                 diagnostic["dynamicRule"] = dynamic_reason
             package.shop_price_diagnostics.append(diagnostic)
@@ -2472,9 +2474,16 @@ def add_purchase_offer_projections(
                         transformation_rule="official-shops-to-player-facts-v1",
                     )
         if entity.entity_type == "crop" and not coin_price_written:
-            ensure_not_collected_purchase_slot(
-                package, entity, "seed_purchase_price", locators_by_entity.get(entity.id)
-            )
+            if non_coin_offer_written and not dynamic_price_written:
+                # 种子只能以兑换获得（如沙漠节 2 换 1）时没有金币价格，
+                # 按 big_craftable 口径标记为不适用而非未收录。
+                ensure_not_applicable_purchase_slot(
+                    package, entity, "seed_purchase_price", locators_by_entity.get(entity.id)
+                )
+            else:
+                ensure_not_collected_purchase_slot(
+                    package, entity, "seed_purchase_price", locators_by_entity.get(entity.id)
+                )
         elif entity.entity_type in {"big_craftable", "tool", "weapon"} and not coin_price_written:
             # An offer paid only in a special currency or another item has no
             # gold purchase price by definition. Keep its quoted cost in the
@@ -3514,11 +3523,11 @@ def resolve_shop_offer_price(
             input_claim_id = object_id
 
     if requires_runtime_profit_margin(offer, target, by_id):
-        return {
-            "kind": "dynamic",
-            "reason": "runtime-profit-margin",
-            "inputClaimId": input_claim_id,
-        }
+        # 利润率设置（标准=1×，困难=1.5×）是玩家档位，不是商品定价：
+        # 离线图鉴展示标准档价格，并保留「受利润率设置影响」的规则说明。
+        profit_margin_only = True
+    else:
+        profit_margin_only = False
     modifiers = active_shop_price_modifiers(offer)
     if modifiers is None:
         return {
@@ -3550,6 +3559,7 @@ def resolve_shop_offer_price(
         "value": value,
         "inputClaimId": input_claim_id,
         "reason": "trade-item-cost" if exchange_only else "static-official-shop-price",
+        "profitMargin": profit_margin_only,
         "appliedShopModifiers": len(modifiers["shop"]),
         "appliedItemModifiers": len(modifiers["item"]),
     }
@@ -5863,6 +5873,27 @@ def tailoring_tag_label(
     return None
 
 
+def lost_item_quest_parts_attrs(
+    attributes: dict[str, Any], by_id: dict[str, NormalizedEntity]
+) -> tuple[str | None, str | None]:
+    """从官方 questLocation（"Abigail (O)191 100 129"）解析物品与委托人中文名。"""
+    location = text_value(attributes.get("questLocation"))
+    if not location:
+        return None, None
+    match = re.match(r"^([A-Za-z][\w .'-]*) \(O\)(\d+)\b", location)
+    if match is None:
+        return None, None
+    villager_key = match.group(1)
+    item_id = match.group(2)
+    villager = by_id.get(f"villager:{villager_key}")
+    villager_name = (
+        villager.name_zh if villager is not None and villager.name_zh else villager_key
+    )
+    item = by_id.get(f"object:{item_id}")
+    item_name = item.name_zh if item is not None and item.name_zh else item_id
+    return item_name, villager_name
+
+
 def quest_facts(
     entity: NormalizedEntity,
     attributes: dict[str, Any],
@@ -5872,6 +5903,8 @@ def quest_facts(
 
     探险家公会讨伐任务（MonsterSlayerQuests）使用另一套字段：Targets 是
     怪物列表，Count 是目标数量，RewardItemPrice 是金币奖励。
+    秘密寻物任务（SecretLostItem）官方占位标题/目标为省略号，从
+    questLocation 解析「把<物品>交给<村民>」。
     """
     quest_type = text_value(attributes.get("questType"))
     facts: list[Schema5FactSlot] = []
@@ -5918,7 +5951,13 @@ def quest_facts(
                 )
             )
     objective = text_value(attributes.get("questObjective"))
-    if objective is not None:
+    if objective is None or not objective.strip(" .…·"):
+        item_name, villager_name = lost_item_quest_parts_attrs(
+            attributes, by_id or {}
+        )
+        if item_name is not None and villager_name is not None:
+            objective = f"把{item_name}交给{villager_name}"
+    if objective is not None and objective.strip(" .…·"):
         facts.append(fixed_fact(entity, "quest_objective", "text", text_value=objective))
     reward_parts = []
     reward_item = text_value(attributes.get("questRewardItemId"))

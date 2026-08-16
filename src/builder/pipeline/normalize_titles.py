@@ -35,6 +35,8 @@ def apply_contextual_display_data(
         return resolve_schedule_title(entity, villagers)
     if entity.entity_type == "villager_gift":
         return resolve_gift_title(entity, villagers)
+    if entity.entity_type == "quest":
+        return resolve_quest_title(entity, items, villagers)
     title_builders = {
         "shop": lambda: shop_title(entity, items, villagers),
         "tailoring_recipe": lambda: tailoring_title(entity, items),
@@ -44,6 +46,44 @@ def apply_contextual_display_data(
     if builder is None:
         return entity
     return entity.model_copy(update={"name_zh": builder(), "name_en": None})
+
+
+def resolve_quest_title(
+    entity: NormalizedEntity,
+    items: dict[str, NormalizedEntity],
+    villagers: dict[str, NormalizedEntity],
+) -> NormalizedEntity:
+    """秘密寻物任务：官方标题是省略号占位（游戏运行时拼物品名），
+    离线图鉴从 questLocation（"Abigail (O)191 …"）解析出可读标题。"""
+    name = (entity.name_zh or "").strip(" .…·")
+    if name:
+        return entity
+    item_name, villager_name = lost_item_quest_parts(entity, items, villagers)
+    if item_name is None:
+        return entity
+    title = f"秘密寻物：{item_name}" + (f"（{villager_name}）" if villager_name else "")
+    return entity.model_copy(update={"name_zh": title, "name_en": None})
+
+
+def lost_item_quest_parts(
+    entity: NormalizedEntity,
+    items: dict[str, NormalizedEntity],
+    villagers: dict[str, NormalizedEntity],
+) -> tuple[str | None, str | None]:
+    """从官方 questLocation（"Abigail (O)191 100 129"）解析物品与委托人。"""
+    location = str((entity.extra_json or {}).get("questLocation") or "")
+    match = re.match(r"^([A-Za-z][\w .'-]*) \(O\)(\d+)\b", location)
+    if match is None:
+        return None, None
+    villager_key = match.group(1)
+    item_id = match.group(2)
+    item = items.get(f"object:{item_id}")
+    item_name = item.name_zh if item is not None and item.name_zh else item_id
+    villager = villagers.get(reference_key(villager_key))
+    villager_name = (
+        villager.name_zh if villager is not None and villager.name_zh else villager_key
+    )
+    return item_name, villager_name
 
 
 def resolve_gift_title(
