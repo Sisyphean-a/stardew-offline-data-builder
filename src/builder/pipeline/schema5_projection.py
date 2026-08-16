@@ -1720,7 +1720,7 @@ def render_schedule_rule(rule: str) -> str | None:
             level = int(tokens[3])
         except ValueError:
             return "受好感度条件限制"
-        return f"需与{name}好感度低于{level}"
+        return f"与{name}好感度低于{level}心时"
     if head == "MAIL":
         return "受邮件事件条件限制"
     if head.startswith("a") and head[1:].isdigit():
