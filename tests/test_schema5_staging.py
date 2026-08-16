@@ -258,6 +258,36 @@ def test_monster_drop_projection_keeps_item_reference_and_chance_condition(
     )
 
 
+def test_ginger_island_event_projects_trigger_condition_fact(tmp_path: Path) -> None:
+    package = build_schema5_staging_package(
+        [
+            entity(
+                "ginger_island:IslandSouth:6497428/e-6497423/f-Leo-1500/w-sunny/t-600-1800/Hl-leoMoved",
+                "ginger_island",
+            ),
+            entity(
+                "ginger_island:IslandNorth:6497421/e 6497423/f Leo 1000/w sunny/t 600 1800/Hl leoMoved",
+                "ginger_island",
+            ),
+            entity("ginger_island:IslandDepart", "ginger_island"),
+        ],
+        tmp_path,
+        game_version="1.6.15",
+    )
+    slots = [
+        slot
+        for slot in package.fact_slots
+        if slot.slot_key == "ginger_trigger_condition"
+    ]
+    assert len(slots) == 2
+    assert all(slot.text_value == "天气：晴天，时间：6:00–18:00" for slot in slots)
+    assert not any(
+        slot.slot_key == "ginger_trigger_condition"
+        for slot in package.fact_slots
+        if slot.entity_id.endswith("IslandDepart")
+    )
+
+
 def test_weapon_projection_derives_sale_price_from_official_runtime_rule(
     tmp_path: Path,
 ) -> None:

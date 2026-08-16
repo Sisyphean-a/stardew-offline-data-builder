@@ -1137,6 +1137,9 @@ def build_schema5_package(
     """
     entity_ids = {entity.id for entity in entities}
     by_id = {entity.id: entity for entity in entities}
+    if support is not None:
+        entities = resolve_tailoring_output_names(entities, support)
+        by_id = {entity.id: entity for entity in entities}
     schema_entities = [to_schema_entity(entity) for entity in entities]
     package = Schema5Package(
         entities=schema_entities,
@@ -5699,6 +5702,149 @@ def strip_runtime_tokens(value: str) -> str:
     return cleaned
 
 
+def resolve_tailoring_output_names(
+    entities: list[NormalizedEntity],
+    support: OfficialSupportData,
+) -> list[NormalizedEntity]:
+    """把裁缝配方的「编号：43」标题解析为「裁缝配方：战士头盔」等产物名。
+
+    官方 TailoringRecipes 的 CraftedItemId 使用 (H)/(S)/(P) 前缀引用
+    帽子/衬衫/裤子，名称分别来自 hats.zh-CN.json 与 Shirts/Pants 字符串表。
+    """
+    resolved: list[NormalizedEntity] = []
+    for entity in entities:
+        if entity.entity_type != "tailoring_recipe":
+            resolved.append(entity)
+            continue
+        output = tailoring_output_reference(entity)
+        output_name = tailoring_output_name_zh(output, support)
+        if not output_name:
+            resolved.append(entity)
+            continue
+        resolved.append(
+            entity.model_copy(update={"name_zh": f"裁缝配方：{output_name}"})
+        )
+    return resolved
+
+
+def tailoring_output_reference(entity: NormalizedEntity) -> str | None:
+    attributes = structured_attributes(entity)
+    output = text_value(attributes.get("CraftedItemId"))
+    if output is not None:
+        return output
+    outputs = attributes.get("CraftedItemIds")
+    if isinstance(outputs, list) and outputs:
+        return str(outputs[0]).strip()
+    return None
+
+
+def tailoring_output_name_zh(
+    output: str | None, support: OfficialSupportData
+) -> str | None:
+    if not output:
+        return None
+    match = re.fullmatch(r"\(([HPS])\)(\d+)", output, re.IGNORECASE)
+    if match is None:
+        return None
+    prefix, item_id = match.group(1).upper(), match.group(2)
+    if prefix == "H":
+        return support.hat_name_zh(item_id)
+    if prefix == "S":
+        return support.shirts_zh.get(item_id)
+    if prefix == "P":
+        return support.pants_zh.get(item_id)
+    return None
+
+
+# 裁缝第一材料：几乎全部配方从布料开始（官方标签 item_cloth）。
+TAILORING_BASE_TAG_ZH = {
+    "item_cloth": "布料",
+    "item_lucky_purple_shorts": "刘易斯紫色短裤",
+}
+
+# 第二材料的类别标签（无法解析到具体物品时使用的中文类别名）。
+TAILORING_CATEGORY_TAG_ZH = {
+    "category_fish": "任意鱼类",
+    "category_vegetable": "任意蔬菜",
+    "category_fruits": "任意水果",
+    "flower_item": "任意花卉",
+    "fruit_tree_item": "任意果树果实",
+    "fish_crab_pot": "任意蟹笼渔获",
+    "fish_ocean": "任意海洋鱼类",
+}
+
+TAILORING_SEASON_TAG_ZH = {
+    "spring": "春季作物",
+    "summer": "夏季作物",
+    "fall": "秋季作物",
+    "winter": "冬季作物",
+}
+
+
+def tailoring_facts(
+    entity: NormalizedEntity,
+    attributes: dict[str, Any],
+    by_id: dict[str, NormalizedEntity] | None,
+) -> list[Schema5FactSlot]:
+    """裁缝配方：所需材料与产物。
+
+    材料标签优先解析为已发布物品的中文名（游戏隐式 item_<名称> 标签），
+    类别/季节标签使用固定中文类别；产物名沿用标题解析结果。
+    """
+    facts: list[Schema5FactSlot] = []
+    first_tags = attributes.get("FirstItemTags")
+    second_tags = attributes.get("SecondItemTags")
+    materials: list[str] = []
+    if isinstance(first_tags, list):
+        materials.extend(
+            tailoring_tag_label(tag, by_id or {})
+            for tag in first_tags
+        )
+    if isinstance(second_tags, list):
+        materials.extend(
+            tailoring_tag_label(tag, by_id or {})
+            for tag in second_tags
+        )
+    materials = [name for name in materials if name]
+    if materials:
+        facts.append(
+            fixed_fact(
+                entity,
+                "tailoring_materials",
+                "text",
+                text_value=" + ".join(materials),
+            )
+        )
+    return facts
+
+
+def tailoring_tag_label(
+    tag: object, by_id: dict[str, NormalizedEntity]
+) -> str | None:
+    value = str(tag or "").strip()
+    if not value:
+        return None
+    if value in TAILORING_BASE_TAG_ZH:
+        return TAILORING_BASE_TAG_ZH[value]
+    if value in TAILORING_CATEGORY_TAG_ZH:
+        return TAILORING_CATEGORY_TAG_ZH[value]
+    if value.startswith("season_"):
+        season = value[len("season_"):]
+        return TAILORING_SEASON_TAG_ZH.get(season)
+    if value.startswith("item_"):
+        key = value[len("item_"):].replace("_", " ").casefold()
+        for candidate in by_id.values():
+            if candidate.entity_type != "object":
+                continue
+            internal = (candidate.internal_name or "").strip()
+            if internal and internal.casefold() == key:
+                return candidate.name_zh
+            compact = re.sub(r"[^a-z0-9]", "", internal.casefold())
+            if compact and compact == re.sub(r"[^a-z0-9]", "", key):
+                return candidate.name_zh
+    return None
+
+
 def quest_facts(
     entity: NormalizedEntity,
     attributes: dict[str, Any],
@@ -5878,6 +6024,42 @@ def bundle_ingredient_label(
     return f"{name}{suffix}"
 
 
+def drop_facts(
+    entity: NormalizedEntity,
+    attributes: dict[str, Any],
+    by_id: dict[str, NormalizedEntity] | None,
+) -> list[Schema5FactSlot]:
+    """掉落记录：概率与来源怪物。
+
+    掉落条目本身是怪物详情「掉落详情」的数据源；这里让掉落条目
+    自己的详情页也有可读内容（概率 + 掉落来源），而不是空页面。
+    """
+    facts: list[Schema5FactSlot] = []
+    chance = attributes.get("chance")
+    if isinstance(chance, str):
+        try:
+            chance = float(chance)
+        except ValueError:
+            chance = None
+    if isinstance(chance, int | float) and not isinstance(chance, bool):
+        percent = chance * 100
+        text = (
+            f"{round(percent)}%"
+            if abs(percent - round(percent)) < 1e-9
+            else f"{percent:g}%"
+        )
+        facts.append(fixed_fact(entity, "drop_chance", "text", text_value=text))
+    raw_monster = text_value(attributes.get("monsterId"))
+    if raw_monster is not None:
+        monster_id = f"monster:{raw_monster.strip().replace(' ', '-')}"
+        monster = (by_id or {}).get(monster_id)
+        monster_name = monster.name_zh if monster is not None else raw_monster
+        facts.append(
+            fixed_fact(entity, "drop_source", "text", text_value=monster_name)
+        )
+    return facts
+
+
 def special_order_facts(
     entity: NormalizedEntity,
     attributes: dict[str, Any],
@@ -5944,6 +6126,50 @@ def special_order_facts(
     return facts
 
 
+GINGER_ISLAND_WEATHER_ZH = {
+    "sunny": "晴天",
+    "rain": "雨天",
+    "wind": "大风天",
+    "snow": "雪天",
+    "storm": "暴风雨",
+}
+
+
+def _game_time_label(value: int) -> str:
+    return f"{value // 100}:{value % 100:02d}"
+
+
+def ginger_island_facts(
+    entity: NormalizedEntity, attributes: dict[str, Any]
+) -> list[Schema5FactSlot]:
+    """姜岛事件：从官方事件脚本路径解析触发条件（天气/时间窗）。
+
+    事件记录的 game_id 是官方事件脚本路径（如
+    IslandSouth/6497428/e-6497423/f-Leo-1500/w-sunny/t-600-1800/Hl-leoMoved），
+    其中 w-（天气）与 t-（时间窗）片段是玩家关心的触发条件；规范化的
+    game_id 可能把分隔符折叠为空格（"w sunny"），因此按分隔符宽松匹配。
+    """
+    facts: list[Schema5FactSlot] = []
+    source_id = entity.game_id or entity.internal_name or ""
+    parts: list[str] = []
+    weather = re.search(r"(?:^|[/\\\s])w[\s-]([A-Za-z]+)", source_id)
+    if weather:
+        raw = weather.group(1).casefold()
+        parts.append(f"天气：{GINGER_ISLAND_WEATHER_ZH.get(raw, weather.group(1))}")
+    window = re.search(r"(?:^|[/\\\s])t[\s-](\d+)[\s-](\d+)", source_id)
+    if window:
+        parts.append(
+            f"时间：{_game_time_label(int(window.group(1)))}–{_game_time_label(int(window.group(2)))}"
+        )
+    if parts:
+        facts.append(
+            fixed_fact(
+                entity, "ginger_trigger_condition", "text", text_value="，".join(parts)
+            )
+        )
+    return facts
+
+
 def typed_facts(
     entity: NormalizedEntity,
     *,
@@ -5959,6 +6185,12 @@ def typed_facts(
         facts.extend(bundle_facts(entity, attributes, by_id))
     if entity.entity_type == "special_order":
         facts.extend(special_order_facts(entity, attributes, by_id))
+    if entity.entity_type == "tailoring_recipe":
+        facts.extend(tailoring_facts(entity, attributes, by_id))
+    if entity.entity_type == "drop":
+        facts.extend(drop_facts(entity, attributes, by_id))
+    if entity.entity_type == "ginger_island":
+        facts.extend(ginger_island_facts(entity, attributes))
     if entity.entity_type == "villager":
         if isinstance(attributes.get("CanBeRomanced"), bool):
             facts.append(

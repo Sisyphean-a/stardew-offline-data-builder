@@ -61,3 +61,19 @@ def displayable_entity_name(
 def drop_record_id(entity: NormalizedEntity) -> str:
     source_id = (entity.game_id or entity.id).rsplit(":", maxsplit=1)[-1]
     return humanize_identifier(source_id) or "未知"
+
+
+def drop_chance(entity: NormalizedEntity) -> str | None:
+    """掉落概率的百分比文案（0.05 → 5%）。"""
+    value = entity.extra_json.get("chance")
+    if isinstance(value, str):
+        try:
+            value = float(value)
+        except ValueError:
+            return None
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        return None
+    percent = value * 100
+    if abs(percent - round(percent)) < 1e-9:
+        return f"{round(percent)}%"
+    return f"{percent:g}%"

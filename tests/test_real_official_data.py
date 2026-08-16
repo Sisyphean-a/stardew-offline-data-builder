@@ -272,7 +272,7 @@ def test_real_official_layout_derives_drops_minerals_and_rings(tmp_path: Path) -
     drop = by_id["drop:Green-Slime:0"]
     assert "绿色史莱姆" in drop.name_zh
     assert "紫水晶" in drop.name_zh
-    assert "记录0" in drop.name_zh
+    assert "记录" not in drop.name_zh
     assert drop.name_en is None
 
 

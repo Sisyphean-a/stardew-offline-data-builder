@@ -11,6 +11,7 @@ from builder.pipeline.normalize_schedule import (
 )
 from builder.pipeline.normalize_support import (
     displayable_entity_name,
+    drop_chance,
     drop_record_id,
     humanize_identifier,
     item_key_value,
@@ -79,12 +80,62 @@ def resolve_drop_title(
 ) -> NormalizedEntity:
     item_id = entity.extra_json.get("itemId")
     monster_id = entity.extra_json.get("monsterId")
-    item = items.get(item_key_value(item_id))
     monster = monsters.get(reference_key(monster_id))
-    item_name = displayable_entity_name(item, item_id, "物品")
     monster_name = displayable_entity_name(monster, monster_id, "怪物")
-    title = f"{monster_name}掉落：{item_name}（记录{drop_record_id(entity)}）"
+    title = f"{monster_name}掉落：{drop_item_label(item_id, items)}"
+    chance = drop_chance(entity)
+    if chance is not None:
+        title += f"（{chance}）"
     return entity.model_copy(update={"name_zh": title, "name_en": None})
+
+
+# Monsters.json 掉落列表中的负整数是官方 Object.Category 类别 ID（游戏按类别
+# 随机掉落该类别物品），不是物品编号；中文文案与 GIFT_CATEGORY_ZH 同源
+# （GetCategoryDisplayName 与 StringsFromCSFiles.zh-CN.json）。
+DROP_ITEM_CATEGORY_ZH = {
+    -2: "矿物",
+    -4: "鱼",
+    -5: "动物制品",
+    -6: "动物制品",
+    -7: "菜品",
+    -8: "制造品",
+    -12: "矿物",
+    -14: "动物制品",
+    -15: "资源",
+    -16: "资源",
+    -19: "化肥",
+    -20: "垃圾",
+    -21: "古物",
+    -22: "种子",
+    -23: "蔬菜",
+    -24: "水果",
+    -25: "花",
+    -26: "采集品",
+    -27: "怪物战利品",
+    -28: "鱼饵",
+    -29: "钓具",
+    -74: "种子",
+    -75: "蔬菜",
+    -79: "水果",
+    -80: "花",
+    -81: "采集品",
+}
+
+
+def drop_item_label(item_id: object, items: dict[str, NormalizedEntity]) -> str:
+    """掉落物品的中文名；负整数解析为官方类别中文名而非数字编号。"""
+    item = items.get(item_key_value(item_id))
+    if item is not None:
+        return displayable_entity_name(item, item_id, "物品")
+    try:
+        category = int(str(item_id).strip())
+    except (TypeError, ValueError):
+        category = None
+    if category is not None and category < 0:
+        label = DROP_ITEM_CATEGORY_ZH.get(category)
+        if label:
+            return label
+    return displayable_entity_name(None, item_id, "物品")
 
 
 SHOP_TITLES = {

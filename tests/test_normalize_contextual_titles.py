@@ -236,7 +236,7 @@ def test_gift_titles_cover_universal_preferences_and_avatar_metadata() -> None:
     }
 
 
-def test_drop_titles_include_monster_item_and_record_marker() -> None:
+def test_drop_titles_include_monster_item_and_probability() -> None:
     entities = normalize_entities(
         [
             raw("monster", "Bat", name="蝙蝠"),
@@ -244,12 +244,12 @@ def test_drop_titles_include_monster_item_and_record_marker() -> None:
             raw(
                 "drop",
                 "Bat:0",
-                attributes={"monsterId": "Bat", "itemId": "999"},
+                attributes={"monsterId": "Bat", "itemId": "999", "chance": "0.1"},
             ),
             raw(
                 "drop",
                 "Bat:1",
-                attributes={"monsterId": "Bat", "itemId": "999"},
+                attributes={"monsterId": "Bat", "itemId": "999", "chance": "0.05"},
             ),
         ],
         aliases={},
@@ -261,7 +261,7 @@ def test_drop_titles_include_monster_item_and_record_marker() -> None:
     for drop in drops:
         assert "蝙蝠" in drop.name_zh
         assert "测试物品" in drop.name_zh
-        assert "记录" in drop.name_zh
+        assert "记录" not in drop.name_zh
         assert drop.name_en is None
 
 
@@ -401,5 +401,51 @@ def test_drop_without_links_keeps_explicit_fallback() -> None:
 
     assert "怪物（未知）" in entity.name_zh
     assert "物品（未知）" in entity.name_zh
-    assert "记录0" in entity.name_zh
+    assert "记录" not in entity.name_zh
     assert entity.name_en is None
+
+
+def test_drop_with_chance_shows_percentage_in_title() -> None:
+    entity = next(
+        item
+        for item in normalize_entities(
+            [
+                raw(
+                    "drop",
+                    "Monster:0",
+                    attributes={"monsterId": "Monster", "itemId": "24", "chance": "0.1"},
+                )
+            ],
+            aliases={},
+            categories={},
+        )
+        if item.entity_type == "drop"
+    )
+
+    assert "10%" in entity.name_zh
+    assert "记录" not in entity.name_zh
+
+
+def test_drop_with_negative_category_id_shows_category_name() -> None:
+    entities = normalize_entities(
+        [
+            raw(
+                "drop",
+                "Crow:0",
+                attributes={"monsterId": "Crow", "itemId": "-4", "chance": "0.9"},
+            ),
+            raw(
+                "drop",
+                "Ghost:0",
+                attributes={"monsterId": "Ghost", "itemId": "-6", "chance": "0.2"},
+            ),
+        ],
+        aliases={},
+        categories={},
+    )
+    by_id = {entity.id: entity for entity in entities if entity.entity_type == "drop"}
+
+    assert "鱼（90%）" in by_id["drop:Crow:0"].name_zh
+    assert "掉落：-4" not in by_id["drop:Crow:0"].name_zh
+    assert "4（90%）" not in by_id["drop:Crow:0"].name_zh
+    assert "动物制品（20%）" in by_id["drop:Ghost:0"].name_zh

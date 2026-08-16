@@ -411,13 +411,19 @@ def build_monster_drops(
         return []
     drops = fields[6].split()
     entities: list[RawEntity] = []
+    seen: set[tuple[str, str]] = set()
+    sequence = 0
     for index in range(0, len(drops) - 1, 2):
         item_id, chance = drops[index : index + 2]
+        pair = (item_id, chance)
+        if pair in seen:
+            continue
+        seen.add(pair)
         entities.append(
             RawEntity(
                 source="official",
                 entity_type="drop",
-                source_id=f"{monster_id}:{index // 2}",
+                source_id=f"{monster_id}:{sequence}",
                 internal_name=f"{monster_id}:{item_id}",
                 name=None,
                 description=None,
@@ -426,6 +432,7 @@ def build_monster_drops(
                 source_file=str(path),
             )
         )
+        sequence += 1
     return entities
 
 
