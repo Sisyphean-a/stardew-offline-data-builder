@@ -890,6 +890,40 @@ def test_recipe_shows_dish_effects_and_repeatable_flag(tmp_path: Path) -> None:
     assert by_entity["special_order:Clint"]["special_order_repeatable"] is False
 
 
+def test_weapon_projects_speed_crit_and_defense_stats(tmp_path: Path) -> None:
+    package = build_schema5_staging_package(
+        [
+            entity(
+                "weapon:1",
+                "weapon",
+                extra_json={
+                    "Type": 0,
+                    "MinDamage": 8,
+                    "MaxDamage": 15,
+                    "Speed": 2,
+                    "Precision": 1,
+                    "Defense": 0,
+                    "CritChance": 0.02,
+                    "CritMultiplier": 3.0,
+                },
+            )
+        ],
+        tmp_path,
+        game_version="1.6.15",
+    )
+    by_entity: dict[str, dict[str, object]] = {}
+    for fact in package.fact_slots:
+        by_entity.setdefault(fact.entity_id, {})[fact.slot_key] = (
+            fact.text_value if fact.text_value is not None else fact.integer_value
+        )
+
+    assert by_entity["weapon:1"]["weapon_speed"] == 2
+    assert by_entity["weapon:1"]["weapon_precision"] == 1
+    assert by_entity["weapon:1"]["weapon_defense"] == 0
+    assert by_entity["weapon:1"]["weapon_crit_chance"] == "2%"
+    assert by_entity["weapon:1"]["weapon_crit_multiplier"] == "3×"
+
+
 def test_monster_xp_and_crop_harvest_quantity(tmp_path: Path) -> None:
     package = build_schema5_staging_package(
         [

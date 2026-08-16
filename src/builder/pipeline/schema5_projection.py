@@ -7077,6 +7077,50 @@ def typed_facts(
                     integer_value=weapon_sell_price(entity, attributes),
                 )
             )
+            facts.extend(
+                [
+                    fixed_fact(
+                        entity,
+                        "weapon_speed",
+                        "integer",
+                        integer_value=int_value(attributes.get("Speed")),
+                    ),
+                    fixed_fact(
+                        entity,
+                        "weapon_precision",
+                        "integer",
+                        integer_value=int_value(attributes.get("Precision")),
+                    ),
+                    fixed_fact(
+                        entity,
+                        "weapon_defense",
+                        "integer",
+                        integer_value=int_value(attributes.get("Defense")),
+                    ),
+                ]
+            )
+            crit_chance = attributes.get("CritChance")
+            if isinstance(crit_chance, int | float) and not isinstance(crit_chance, bool):
+                facts.append(
+                    fixed_fact(
+                        entity,
+                        "weapon_crit_chance",
+                        "text",
+                        text_value=percent_label(crit_chance * 100),
+                    )
+                )
+            crit_multiplier = attributes.get("CritMultiplier")
+            if isinstance(crit_multiplier, int | float) and not isinstance(
+                crit_multiplier, bool
+            ):
+                facts.append(
+                    fixed_fact(
+                        entity,
+                        "weapon_crit_multiplier",
+                        "text",
+                        text_value=f"{crit_multiplier:g}×",
+                    )
+                )
     if entity.entity_type == "monster":
         facts.extend(
             [
