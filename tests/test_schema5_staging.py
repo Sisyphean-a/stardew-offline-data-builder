@@ -777,6 +777,31 @@ def test_special_order_rewards_and_bundle_quality_and_fish_pond(tmp_path: Path) 
     assert by_entity["fish:128"]["fish_pond_outputs"] == "罗非鱼（3 条后，20%）"
 
 
+def test_furniture_projects_kind_fact(tmp_path: Path) -> None:
+    package = build_schema5_staging_package(
+        [
+            entity("furniture:0", "furniture", extra_json={"furnitureType": "chair"}),
+            entity(
+                "furniture:1120", "furniture", extra_json={"furnitureType": "table"}
+            ),
+            entity(
+                "furniture:1122",
+                "furniture",
+                extra_json={"furnitureType": "bed double"},
+            ),
+        ],
+        tmp_path,
+        game_version="1.6.15",
+    )
+    by_entity: dict[str, dict[str, str]] = {}
+    for fact in package.fact_slots:
+        by_entity.setdefault(fact.entity_id, {})[fact.slot_key] = fact.text_value or ""
+
+    assert by_entity["furniture:0"]["furniture_kind"] == "椅子"
+    assert by_entity["furniture:1120"]["furniture_kind"] == "桌子"
+    assert by_entity["furniture:1122"]["furniture_kind"] == "双人床"
+
+
 def test_weapon_projection_derives_sale_price_from_official_runtime_rule(
     tmp_path: Path,
 ) -> None:

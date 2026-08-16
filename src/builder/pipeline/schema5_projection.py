@@ -6465,6 +6465,46 @@ def build_recipe_shop_index(entities: list[NormalizedEntity]) -> dict[str, list[
     return index
 
 
+# 官方 Furniture.json 类型 → 中文（家具详情「类型」）。
+FURNITURE_TYPE_ZH = {
+    "decor": "装饰",
+    "painting": "挂画",
+    "rug": "地毯",
+    "table": "桌子",
+    "long table": "长桌",
+    "chair": "椅子",
+    "armchair": "扶手椅",
+    "couch": "沙发",
+    "bench": "长凳",
+    "bed": "床",
+    "bed double": "双人床",
+    "bed child": "儿童床",
+    "lamp": "灯具",
+    "sconce": "壁灯",
+    "torch": "火炬",
+    "bookcase": "书架",
+    "dresser": "梳妆台",
+    "fireplace": "壁炉",
+    "window": "窗户",
+    "fishtank": "鱼缸",
+    "randomized_plant": "植物",
+    "other": "其他",
+}
+
+
+def furniture_kind_facts(
+    entity: NormalizedEntity, attributes: dict[str, Any]
+) -> list[Schema5FactSlot]:
+    """家具：官方类型中文名（椅子/桌子/床/地毯/挂画…）。"""
+    raw = text_value(attributes.get("furnitureType"))
+    if raw is None:
+        return []
+    label = FURNITURE_TYPE_ZH.get(raw.strip().casefold())
+    if label is None:
+        return []
+    return [fixed_fact(entity, "furniture_kind", "text", text_value=label)]
+
+
 def recipe_source_facts(
     entity: NormalizedEntity,
     attributes: dict[str, Any],
@@ -6730,6 +6770,8 @@ def typed_facts(
         )
     if entity.entity_type == "fish":
         facts.extend(fish_pond_facts(entity, fish_pond_index, by_id or {}))
+    if entity.entity_type == "furniture":
+        facts.extend(furniture_kind_facts(entity, attributes))
     if entity.entity_type == "object":
         facts.extend(food_effect_facts(entity, attributes))
         facts.extend(gift_liker_facts(entity, gift_index, universal_gift))
