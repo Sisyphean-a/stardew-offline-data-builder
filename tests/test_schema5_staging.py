@@ -802,6 +802,68 @@ def test_furniture_projects_kind_fact(tmp_path: Path) -> None:
     assert by_entity["furniture:1122"]["furniture_kind"] == "双人床"
 
 
+def test_monster_xp_and_crop_harvest_quantity(tmp_path: Path) -> None:
+    package = build_schema5_staging_package(
+        [
+            entity(
+                "monster:Green-Slime",
+                "monster",
+                extra_json={"monsterHealth": 24, "monsterDamage": 5, "monsterXp": 3},
+            ),
+            entity(
+                "crop:481",
+                "crop",
+                extra_json={
+                    "HarvestMinStack": 3,
+                    "HarvestMaxStack": 3,
+                    "HarvestItemId": "258",
+                },
+            ),
+            entity(
+                "crop:885",
+                "crop",
+                extra_json={
+                    "HarvestMinStack": 4,
+                    "HarvestMaxStack": 7,
+                    "HarvestItemId": "771",
+                },
+            ),
+            entity(
+                "crop:433",
+                "crop",
+                extra_json={
+                    "HarvestMinStack": 4,
+                    "HarvestMaxStack": 1,
+                    "HarvestItemId": "433",
+                },
+            ),
+            entity(
+                "crop:472",
+                "crop",
+                extra_json={
+                    "HarvestMinStack": 1,
+                    "HarvestMaxStack": 1,
+                    "HarvestItemId": "24",
+                },
+            ),
+        ],
+        tmp_path,
+        game_version="1.6.15",
+    )
+    by_entity: dict[str, dict[str, str]] = {}
+    integers: dict[str, dict[str, int]] = {}
+    for fact in package.fact_slots:
+        by_entity.setdefault(fact.entity_id, {})[fact.slot_key] = fact.text_value or ""
+        if fact.integer_value is not None:
+            integers.setdefault(fact.entity_id, {})[fact.slot_key] = fact.integer_value
+
+    assert integers["monster:Green-Slime"]["monster_xp"] == 3
+    assert by_entity["crop:481"]["harvest_quantity"] == "每次收获 3 个"
+    assert by_entity["crop:885"]["harvest_quantity"] == "每次收获 4–7 个"
+    assert by_entity["crop:433"]["harvest_quantity"] == "每次收获 4 个"
+    assert "harvest_quantity" not in by_entity.get("crop:472", {})
+
+
 def test_weapon_projection_derives_sale_price_from_official_runtime_rule(
     tmp_path: Path,
 ) -> None:

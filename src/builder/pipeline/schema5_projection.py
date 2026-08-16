@@ -6505,6 +6505,32 @@ def furniture_kind_facts(
     return [fixed_fact(entity, "furniture_kind", "text", text_value=label)]
 
 
+def crop_harvest_quantity_facts(
+    entity: NormalizedEntity, attributes: dict[str, Any]
+) -> list[Schema5FactSlot]:
+    """作物：每次收获数量（官方 HarvestMin/MaxStack；部分条目 max 反置按 min）。"""
+    minimum = int_value(attributes.get("HarvestMinStack"))
+    maximum = int_value(attributes.get("HarvestMaxStack"))
+    if minimum is None or maximum is None:
+        return []
+    if maximum > minimum:
+        return [
+            fixed_fact(
+                entity,
+                "harvest_quantity",
+                "text",
+                text_value=f"每次收获 {minimum}–{maximum} 个",
+            )
+        ]
+    if maximum == minimum == 1:
+        return []
+    return [
+        fixed_fact(
+            entity, "harvest_quantity", "text", text_value=f"每次收获 {minimum} 个"
+        )
+    ]
+
+
 def recipe_source_facts(
     entity: NormalizedEntity,
     attributes: dict[str, Any],
@@ -6772,6 +6798,8 @@ def typed_facts(
         facts.extend(fish_pond_facts(entity, fish_pond_index, by_id or {}))
     if entity.entity_type == "furniture":
         facts.extend(furniture_kind_facts(entity, attributes))
+    if entity.entity_type == "crop":
+        facts.extend(crop_harvest_quantity_facts(entity, attributes))
     if entity.entity_type == "object":
         facts.extend(food_effect_facts(entity, attributes))
         facts.extend(gift_liker_facts(entity, gift_index, universal_gift))
@@ -7032,6 +7060,18 @@ def typed_facts(
                     "damage",
                     "integer",
                     integer_value=int_value(attributes.get("monsterDamage")),
+                ),
+                fixed_fact(
+                    entity,
+                    "monster_xp",
+                    "integer",
+                    integer_value=int_value(attributes.get("monsterXp")),
+                ),
+                fixed_fact(
+                    entity,
+                    "monster_resilience",
+                    "integer",
+                    integer_value=int_value(attributes.get("monsterResilience")),
                 ),
             ]
         )

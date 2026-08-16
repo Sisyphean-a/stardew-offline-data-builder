@@ -227,6 +227,10 @@ def add_legacy_structured_metadata(
                     "monsterDamage": legacy_int(fields, 1),
                     "monsterCanFly": legacy_bool(fields, 4),
                     "monsterDropText": legacy_text(fields, 6),
+                    # 官方 Monster.parseMonsterInfo：第 7 段是防御（resilience），
+                    # 第 13 段是经验值（ExperienceGained）。
+                    "monsterResilience": legacy_int(fields, 7),
+                    "monsterXp": legacy_int(fields, 13),
                 }
             )
         )
