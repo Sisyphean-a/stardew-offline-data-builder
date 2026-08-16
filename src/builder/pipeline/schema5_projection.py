@@ -1587,7 +1587,7 @@ def add_villager_support_projections(
                     "schedule",
                     "text",
                     text_value=text,
-                    scope_id=f"schedule:{stable_part(support_entity.id)}",
+                    scope_id=f"schedule:{support_entity.game_id}",
                     condition_set_id=None,
                     ordinal=ordinal,
                     locator_id=locator_id,
@@ -1626,13 +1626,7 @@ def schedule_fact_text(attributes: dict[str, Any]) -> str | None:
     schedule = text_value(attributes.get("schedule") or attributes.get("Schedule"))
     entries = attributes.get("ScheduleEntries")
     if isinstance(entries, list):
-        rendered_entries: list[str] = []
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            rendered = render_schedule_entry(entry)
-            if rendered:
-                rendered_entries.append(rendered)
+        rendered_entries = render_schedule_entries(entries)
         if rendered_entries:
             schedule = "；".join(rendered_entries)
     parts = [
@@ -1648,6 +1642,53 @@ def schedule_fact_text(attributes: dict[str, Any]) -> str | None:
     if schedule:
         parts.append(schedule)
     return "；".join(parts) or None
+
+
+def render_schedule_entries(entries: list[dict[str, Any]]) -> list[str]:
+    """把一天内的官方日程段渲染为中文时间线，连续同地点合并为时间段。
+
+    官方一条日程（如镇长周二）是「时间 地点 坐标 动画」的路径段序列，
+    同一地点常常出现多个连续段（如 8:00/10:00 都在镇长庄园）；合并后
+    展示为「8:00–14:00 镇长庄园」，让玩家一眼看出几点到几点在哪。
+    """
+    parts: list[str] = []
+    current: dict[str, Any] | None = None
+
+    def flush() -> None:
+        nonlocal current
+        if current is None:
+            return
+        start = localized_schedule_time(str(current["start"]))
+        if current["end"] is not None:
+            end = localized_schedule_time(str(current["end"]))
+            parts.append(f"{start}–{end} {current['label']}")
+        else:
+            parts.append(f"{start} {current['label']}")
+        current = None
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if "rule" in entry:
+            flush()
+            rule_text = render_schedule_rule(text_value(entry.get("rule")) or "")
+            if rule_text:
+                parts.append(rule_text)
+            continue
+        entry_time = entry.get("time")
+        entry_location = text_value(entry.get("location"))
+        if not (isinstance(entry_time, int) and entry_location):
+            continue
+        location_zh = localized_schedule_location(entry_location)
+        if location_zh is None:
+            continue
+        if current is not None and current["label"] == location_zh:
+            current["end"] = entry_time
+            continue
+        flush()
+        current = {"start": entry_time, "end": None, "label": location_zh}
+    flush()
+    return parts
 
 
 def render_schedule_entry(entry: dict[str, Any]) -> str | None:
