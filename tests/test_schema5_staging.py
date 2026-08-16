@@ -924,6 +924,82 @@ def test_weapon_projects_speed_crit_and_defense_stats(tmp_path: Path) -> None:
     assert by_entity["weapon:1"]["weapon_crit_multiplier"] == "3×"
 
 
+def test_museum_donation_reward_on_item(tmp_path: Path) -> None:
+    support = OfficialSupportData(
+        museum_rewards={
+            "ancient_seed": {
+                "TargetContextTags": [{"Tag": "id_o_114", "Count": 1}],
+                "RewardItemId": "(O)499",
+                "RewardItemCount": 1,
+            },
+            "arch15": {
+                "TargetContextTags": [{"Tag": "item_type_arch", "Count": 15}],
+                "RewardItemId": "(F)1304",
+                "RewardItemCount": 1,
+            },
+        }
+    )
+    package = build_schema5_staging_package(
+        [
+            NormalizedEntity(
+                id="object:114",
+                entity_type="object",
+                game_id="114",
+                internal_name=None,
+                name_zh="上古种子",
+                name_en="Ancient Seed",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={},
+                source_file="Data/Objects.json",
+            ),
+            NormalizedEntity(
+                id="object:499",
+                entity_type="object",
+                game_id="499",
+                internal_name=None,
+                name_zh="上古水果种子",
+                name_en="Ancient Fruit Seeds",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={},
+                source_file="Data/Objects.json",
+            ),
+            NormalizedEntity(
+                id="object:96",
+                entity_type="object",
+                game_id="96",
+                internal_name=None,
+                name_zh="矮人卷轴 I",
+                name_en="Dwarf Scroll I",
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={},
+                source_file="Data/Objects.json",
+            ),
+        ],
+        tmp_path,
+        game_version="1.6.15",
+        support=support,
+    )
+    by_entity: dict[str, dict[str, str]] = {}
+    for fact in package.fact_slots:
+        by_entity.setdefault(fact.entity_id, {})[fact.slot_key] = fact.text_value or ""
+
+    assert by_entity["object:114"]["museum_reward"] == "上古水果种子"
+    # 按数量累计的里程碑不挂在单件物品上
+    assert "museum_reward" not in by_entity.get("object:96", {})
+
+
 def test_monster_xp_and_crop_harvest_quantity(tmp_path: Path) -> None:
     package = build_schema5_staging_package(
         [

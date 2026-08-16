@@ -16,6 +16,7 @@ SUPPORT_FILES = {
 }
 OPTIONAL_SUPPORT_FILES = {
     "monster_slayer_quests": ("MonsterSlayerQuests.json", dict),
+    "museum_rewards": ("MuseumRewards.json", dict),
 }
 
 LOCALIZED_TEXT = re.compile(r"^\[LocalizedText\s+([^:]+):([^\]]+)\]$")
@@ -33,6 +34,8 @@ class OfficialSupportData:
     pants_zh: dict[str, str] = field(default_factory=dict)
     # 女王的美食电视节目：菜谱键名 → 剧集序号（1-32，两年循环每周日播出一集）。
     cooking_channel_episodes: dict[str, int] = field(default_factory=dict)
+    # 博物馆捐赠里程碑奖励（MuseumRewards.json）。
+    museum_rewards: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def hat_name_zh(self, hat_id: str) -> str | None:
         """官方 hats.zh-CN.json 旧格式：名称/描述/…/中文名（最后一个字段）。"""
@@ -66,6 +69,7 @@ def load_official_support_data(unpacked_dir: Path) -> OfficialSupportData:
         shirts_zh=clothing_names_zh(data_dir / "Shirts.json", "strings/shirts", tables),
         pants_zh=clothing_names_zh(data_dir / "Pants.json", "strings/pants", tables),
         cooking_channel_episodes=load_cooking_channel_episodes(unpacked_dir),
+        museum_rewards=loaded["museum_rewards"],
     )
 
 

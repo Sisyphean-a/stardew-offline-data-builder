@@ -1145,6 +1145,7 @@ def build_schema5_package(
     gift_index, universal_gift, drop_index = build_item_relation_indexes(entities)
     shop_index = build_recipe_shop_index(entities)
     fish_pond_index = build_fish_pond_index(support, by_id)
+    museum_index = build_museum_reward_index(support, by_id)
     schema_entities = [to_schema_entity(entity) for entity in entities]
     package = Schema5Package(
         entities=schema_entities,
@@ -1183,6 +1184,7 @@ def build_schema5_package(
             drop_index=drop_index,
             shop_index=shop_index,
             fish_pond_index=fish_pond_index,
+            museum_index=museum_index,
             support=support,
         )
         fact_slots.extend(recipe_output_facts(entity, by_id))
@@ -6464,6 +6466,79 @@ def fish_pond_facts(
     return [fixed_fact(entity, "fish_pond_outputs", "text", text_value="；".join(labels))]
 
 
+def build_museum_reward_index(
+    support: OfficialSupportData | None,
+    by_id: dict[str, NormalizedEntity],
+) -> dict[str, list[str]]:
+    """博物馆捐赠奖励索引：物品 ID → 捐赠该物品获得的奖励中文名。
+
+    只收录「捐赠单个指定物品即触发」的里程碑（TargetContextTags 全部为
+    该物品的 id_o_ 标签）；按数量累计的里程碑（如古物 15 件）不挂在单件物品上。
+    """
+    if support is None:
+        return {}
+    index: dict[str, list[str]] = defaultdict(list)
+    for entry in support.museum_rewards.values():
+        if not isinstance(entry, dict):
+            continue
+        tags = entry.get("TargetContextTags")
+        if not isinstance(tags, list) or not tags:
+            continue
+        item_ids: list[str] = []
+        for tag in tags:
+            if not isinstance(tag, dict):
+                break
+            raw = str(tag.get("Tag") or "")
+            if not raw.startswith("id_o_") or tag.get("Count") != 1:
+                break
+            item_ids.append(raw[5:])
+        else:
+            if not item_ids:
+                continue
+            label = museum_reward_label(entry, by_id)
+            if label:
+                for item_id in item_ids:
+                    index[item_id].append(label)
+    return index
+
+
+def museum_reward_label(
+    entry: dict[str, object], by_id: dict[str, NormalizedEntity]
+) -> str | None:
+    reward_id = str(entry.get("RewardItemId") or "")
+    if not reward_id:
+        return None
+    key = reward_id[3:] if reward_id.startswith("(") else reward_id
+    prefix = {
+        "(O)": "object",
+        "(BC)": "big_craftable",
+        "(F)": "furniture",
+        "(W)": "weapon",
+        "(R)": "ring",
+    }.get(reward_id[:3], "object")
+    target = by_id.get(f"{prefix}:{key}")
+    name = target.name_zh if target is not None and target.name_zh else reward_id
+    count = entry.get("RewardItemCount")
+    if isinstance(count, int) and count > 1:
+        return f"{name}×{count}"
+    return name
+
+
+def museum_reward_facts(
+    entity: NormalizedEntity,
+    museum_index: dict[str, list[str]] | None,
+) -> list[Schema5FactSlot]:
+    if not museum_index:
+        return []
+    item_id = (entity.game_id or "").split("/", maxsplit=1)[0].strip()
+    labels = list(dict.fromkeys(museum_index.get(item_id, [])))
+    if not labels:
+        return []
+    return [
+        fixed_fact(entity, "museum_reward", "text", text_value="、".join(labels))
+    ]
+
+
 def build_recipe_shop_index(entities: list[NormalizedEntity]) -> dict[str, list[str]]:
     """商店配方索引：菜谱产物物品 ID → 出售该配方的商店中文名。"""
     index: dict[str, list[str]] = defaultdict(list)
@@ -6803,6 +6878,7 @@ def typed_facts(
     drop_index: dict[str, dict[str, list[str]]] | None = None,
     shop_index: dict[str, list[str]] | None = None,
     fish_pond_index: dict[str, list[dict[str, object]]] | None = None,
+    museum_index: dict[str, list[str]] | None = None,
     support: OfficialSupportData | None = None,
 ) -> list[Schema5FactSlot]:
     attributes = structured_attributes(entity)
@@ -6835,6 +6911,7 @@ def typed_facts(
         facts.extend(food_effect_facts(entity, attributes))
         facts.extend(gift_liker_facts(entity, gift_index, universal_gift))
         facts.extend(drop_source_facts(entity, drop_index))
+        facts.extend(museum_reward_facts(entity, museum_index))
     if entity.entity_type == "ginger_island":
         facts.extend(ginger_island_facts(entity, attributes))
     if entity.entity_type == "villager":
