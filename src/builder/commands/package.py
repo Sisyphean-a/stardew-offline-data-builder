@@ -80,8 +80,14 @@ def create_schema5_svdata_package(
     manifest_path: Path,
     reports_dir: Path,
     conformance_path: Path,
+    raw_data_dir: Path | None = None,
 ) -> Path:
-    """Package a validated schema-5 output without consulting legacy columns."""
+    """Package a validated schema-5 output without consulting legacy columns.
+
+    ``raw_data_dir``（官方解包数据目录）存在时，把原始 JSON 数据以
+    ``raw/`` 前缀附进包内：数据库只携带玩家可读事实，原始数据随包分发，
+    换机器无需游戏本体即可对数据做后续处理。
+    """
     manifest = load_json_file(manifest_path)
     conformance = load_json_file(conformance_path)
     if not isinstance(manifest, dict) or not isinstance(conformance, dict):
@@ -98,6 +104,8 @@ def create_schema5_svdata_package(
         referenced_schema5_image_files(db_path, output_dir),
         extra_entries=[(conformance_path, conformance_path.name)],
     )
+    if raw_data_dir is not None:
+        entries.extend(raw_json_entries(raw_data_dir))
     temp_path = temporary_package_path(output_dir, package_path.stem)
     try:
         write_package_archive(temp_path, entries, zip_timestamp(generated_at))
@@ -106,6 +114,19 @@ def create_schema5_svdata_package(
     finally:
         temp_path.unlink(missing_ok=True)
     return package_path
+
+
+def raw_json_entries(raw_data_dir: Path) -> list[tuple[Path, str]]:
+    """官方解包目录里的全部 JSON（Data/Strings/TV/日程等）→ raw/ 前缀归档。"""
+    root = raw_data_dir.resolve()
+    entries: list[tuple[Path, str]] = []
+    for path in sorted(root.rglob("*.json")):
+        try:
+            relative = path.relative_to(root).as_posix()
+        except ValueError:
+            continue
+        entries.append((path, f"raw/{relative}"))
+    return entries
 
 
 def referenced_schema5_image_files(db_path: Path, output_dir: Path) -> list[Path]:

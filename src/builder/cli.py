@@ -158,6 +158,28 @@ def inspect(db_path: str = typer.Argument(..., help="SQLite 数据库路径。")
     inspect_command(db_path)
 
 
+@app.command("export-raw-data")
+def export_raw_data(
+    output: str = typer.Option(
+        ".\\stardew-raw-data.zip",
+        help="原始数据包输出路径（包含 Content (unpacked) 全部 JSON 与图片）。",
+    ),
+    game_dir: str | None = typer.Option(
+        None,
+        help="游戏目录；省略时自动从本机 Steam 发现（仅 Windows）。",
+    ),
+    unpacked_dir: str | None = typer.Option(None, help="已解包目录。"),
+) -> None:
+    """导出完整原始数据包，供无游戏机器离线构建（--unpacked-dir 直接使用）。"""
+    from builder.commands.raw_export import export_raw_data_command
+
+    export_raw_data_command(
+        output=Path(output),
+        game_dir=game_dir,
+        unpacked_dir=unpacked_dir,
+    )
+
+
 @app.command("package")
 def package(
     output: str = typer.Option(".\\dist", help="构建输出目录。"),

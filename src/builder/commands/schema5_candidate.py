@@ -148,6 +148,7 @@ def build_schema5_candidate_command(
                     paths["manifest"],
                     staging_dir / "reports",
                     paths["conformance"],
+                    raw_data_dir=resolved_unpacked_dir,
                 )
                 replace_candidate_directory(staging_dir, output_dir)
             except Exception as exc:

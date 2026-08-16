@@ -59,6 +59,31 @@ schema 5 构建阶段从解析后的结构化官方属性和支持文件投影 t
 隐藏）、收集包（区域/所需物品）、特殊订单（委托人/时限/目标）与商店（性质分类、
 店主、商品数）的类型化事实，商店列表按性质排序（普通商店在前、节日商店在后）。
 
+### 原始数据随包分发
+
+`.svdata` 包是 zip 归档：除 SQLite 玩家事实与图片外，还附带 `raw/` 目录，
+包含官方解包数据的**全部原始 JSON**（Data、Strings、TV、日程等，不含图片）。
+这样数据库只回答玩家问题，而原始数据仍随包可用——换一台没有游戏的机器，
+也能直接从包内 `raw/` 提取数据做任何后续处理，不依赖游戏本体。
+
+### 无游戏机器的全量重建
+
+需要重新构建（含视觉图片）时，先在有游戏的机器上导出一份完整原始数据包：
+
+```powershell
+python -m builder export-raw-data `
+  --output ".\stardew-raw-data-1.6.15.24356.zip"
+```
+
+该包包含 `Content (unpacked)` 全部 JSON 与图片（约 114 MiB）。在任意机器上解压后，
+用解压目录直接构建，无需安装游戏：
+
+```powershell
+python -m builder build `
+  --unpacked-dir ".\Content (unpacked)" `
+  --output ".\dist"
+```
+
 ## 产物
 
 ```text
