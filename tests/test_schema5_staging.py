@@ -288,6 +288,121 @@ def test_ginger_island_event_projects_trigger_condition_fact(tmp_path: Path) -> 
     )
 
 
+def test_food_object_projects_edibility_and_buff_facts(tmp_path: Path) -> None:
+    package = build_schema5_staging_package(
+        [
+            entity(
+                "object:206",
+                "object",
+                extra_json={
+                    "Edibility": 60,
+                    "Buffs": [
+                        {
+                            "Id": "Food",
+                            "Duration": 480,
+                            "CustomAttributes": {
+                                "FarmingLevel": 3.0,
+                                "Speed": 0.0,
+                                "Defense": 1.0,
+                            },
+                        }
+                    ],
+                },
+            ),
+            entity("object:434", "object", extra_json={"Edibility": 100}),
+        ],
+        tmp_path,
+        game_version="1.6.15",
+    )
+    facts = {fact.slot_key: fact for fact in package.fact_slots}
+    pizza = next(
+        fact
+        for fact in package.fact_slots
+        if fact.entity_id == "object:206" and fact.slot_key == "edibility"
+    )
+    assert pizza.text_value == "恢复 150 体力、恢复 67 生命"
+    assert facts["food_buffs"].text_value == "耕种+3、防御+1（持续 8 小时）"
+    stardrop = next(
+        fact
+        for fact in package.fact_slots
+        if fact.entity_id == "object:434" and fact.slot_key == "edibility"
+    )
+    assert stardrop.text_value == "恢复全部体力"
+
+
+def test_bundle_projects_reward_fact_with_chinese_name(tmp_path: Path) -> None:
+    package = build_schema5_staging_package(
+        [
+            entity(
+                "bundle:0",
+                "bundle",
+                extra_json={
+                    "BundleRewards": [
+                        {"type": "O", "itemId": "465", "quantity": 20},
+                        {"type": "BO", "itemId": "10", "quantity": 1},
+                    ]
+                },
+            ),
+            NormalizedEntity(
+                id="object:465",
+                entity_type="object",
+                game_id="465",
+                internal_name=None,
+                name_zh="生长激素",
+                name_en=None,
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={},
+                source_file="Data/Objects.json",
+            ),
+            NormalizedEntity(
+                id="big_craftable:10",
+                entity_type="big_craftable",
+                game_id="10",
+                internal_name=None,
+                name_zh="蜂房",
+                name_en=None,
+                description_zh=None,
+                description_en=None,
+                category=None,
+                image_path=None,
+                image_crop_rect=None,
+                extra_json={},
+                source_file="Data/BigCraftables.json",
+            ),
+        ],
+        tmp_path,
+        game_version="1.6.15",
+    )
+    slot = next(slot for slot in package.fact_slots if slot.slot_key == "bundle_reward")
+    assert slot.text_value == "生长激素×20、蜂房"
+
+
+def test_vault_bundle_gold_ingredient_label(tmp_path: Path) -> None:
+    package = build_schema5_staging_package(
+        [
+            entity(
+                "bundle:Vault/25",
+                "bundle",
+                extra_json={
+                    "BundleIngredients": [
+                        {"itemId": "-1", "quantity": 10000, "quality": 10000}
+                    ]
+                },
+            )
+        ],
+        tmp_path,
+        game_version="1.6.15",
+    )
+    slot = next(
+        slot for slot in package.fact_slots if slot.slot_key == "bundle_ingredients"
+    )
+    assert slot.text_value == "10000 金币"
+
+
 def test_weapon_projection_derives_sale_price_from_official_runtime_rule(
     tmp_path: Path,
 ) -> None:

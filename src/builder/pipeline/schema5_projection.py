@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from collections import defaultdict
 from dataclasses import replace
@@ -5994,6 +5995,18 @@ def bundle_facts(
                     entity, "bundle_ingredients", "text", text_value="、".join(names)
                 )
             )
+    rewards = attributes.get("BundleRewards")
+    if isinstance(rewards, list) and rewards:
+        labels = [
+            bundle_reward_label(item, by_id or {})
+            for item in rewards
+            if isinstance(item, dict)
+        ]
+        labels = [label for label in labels if label]
+        if labels:
+            facts.append(
+                fixed_fact(entity, "bundle_reward", "text", text_value="、".join(labels))
+            )
     return facts
 
 
@@ -6016,12 +6029,182 @@ def bundle_ingredient_label(
     item_id = text_value(item.get("itemId"))
     if item_id is None:
         return None
+    quantity = item.get("quantity")
+    if item_id == "-1":
+        # 官方金库收集包用 -1 表示金币（quantity 即金额）。
+        if isinstance(quantity, int) and quantity > 1:
+            return f"{quantity} 金币"
+        return "金币"
     reference = f"object:{item_id}"
     target = by_id.get(reference)
     name = target.name_zh if target is not None else item_id
+    suffix = f"×{quantity}" if isinstance(quantity, int) and quantity > 1 else ""
+    return f"{name}{suffix}"
+
+
+def bundle_reward_label(
+    item: dict[str, object], by_id: dict[str, NormalizedEntity]
+) -> str | None:
+    """收集包奖励的中文名（官方奖励令牌类型 O/BO/R → 对应实体类型）。"""
+    item_id = text_value(item.get("itemId"))
+    if item_id is None:
+        return None
+    kind = str(item.get("type") or "O").casefold()
+    prefix = {"o": "object", "bo": "big_craftable", "r": "ring"}.get(kind, "object")
+    target = by_id.get(f"{prefix}:{item_id}")
+    name = target.name_zh if target is not None and target.name_zh else item_id
     quantity = item.get("quantity")
     suffix = f"×{quantity}" if isinstance(quantity, int) and quantity > 1 else ""
     return f"{name}{suffix}"
+
+
+# 官方 BuffEffects 字段 → 中文增益名（1.6 Objects.json Buffs/CustomAttributes）。
+FOOD_BUFF_ZH = {
+    "FarmingLevel": "耕种",
+    "FishingLevel": "钓鱼",
+    "MiningLevel": "采矿",
+    "ForagingLevel": "采集",
+    "LuckLevel": "幸运",
+    "CombatLevel": "战斗",
+    "MaxStamina": "体力上限",
+    "MagneticRadius": "磁铁范围",
+    "Speed": "速度",
+    "Defense": "防御",
+    "Attack": "攻击",
+    "AttackMultiplier": "攻击倍率",
+    "Immunity": "免疫",
+    "KnockbackMultiplier": "击退",
+    "WeaponSpeedMultiplier": "武器速度",
+    "CriticalChanceMultiplier": "暴击率",
+    "CriticalPowerMultiplier": "暴击威力",
+    "WeaponPrecisionMultiplier": "武器精准",
+}
+
+# BuffEffects 显示顺序（技能等级 → 体力/磁铁 → 战斗数值）。
+FOOD_BUFF_ORDER = [
+    "FarmingLevel",
+    "FishingLevel",
+    "MiningLevel",
+    "ForagingLevel",
+    "LuckLevel",
+    "CombatLevel",
+    "MaxStamina",
+    "MagneticRadius",
+    "Speed",
+    "Defense",
+    "Attack",
+    "AttackMultiplier",
+    "Immunity",
+    "KnockbackMultiplier",
+    "WeaponSpeedMultiplier",
+    "CriticalChanceMultiplier",
+    "CriticalPowerMultiplier",
+    "WeaponPrecisionMultiplier",
+]
+
+# 食用恢复公式特例（1.6.15 Object.staminaRecoveredOnConsumption /
+# healthRecoveredOnConsumption 的官方硬编码）。
+STAR_FOOD_ITEM_ID = "434"  # 星之果实：恢复全部体力
+LIFE_ELIXIR_ITEM_ID = "773"  # 生命药剂：恢复全部生命
+ENERGY_TONIC_ITEM_ID = "349"  # 体力药剂：只恢复体力
+BUG_STEAK_ITEM_ID = "874"  # 虫肉扒：生命按体力的 68% 恢复
+
+
+def _food_stamina_health(edibility: int, item_id: str) -> tuple[int | None, int | None]:
+    """基础品质下官方恢复量：体力 = ceil(食用值×2.5)，生命 = 体力×0.45。"""
+    if item_id == STAR_FOOD_ITEM_ID:
+        return 999, None
+    if item_id == LIFE_ELIXIR_ITEM_ID:
+        return None, 999
+    if item_id == ENERGY_TONIC_ITEM_ID:
+        return math.ceil(edibility * 2.5), None
+    stamina = math.ceil(edibility * 2.5)
+    if item_id == BUG_STEAK_ITEM_ID:
+        return stamina, int(stamina * 0.68)
+    return stamina, int(stamina * 0.45)
+
+
+def _food_buff_duration_label(minutes: int) -> str:
+    if minutes < 60:
+        return f"{minutes} 分钟"
+    if minutes % 60 == 0:
+        return f"{minutes // 60} 小时"
+    return f"{minutes // 60} 小时 {minutes % 60} 分钟"
+
+
+def _buff_value_label(value: object) -> str:
+    if isinstance(value, bool):
+        return ""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if abs(number - round(number)) < 1e-9:
+        number = round(number)
+    return f"{number:g}"
+
+
+def _buff_number(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def food_effect_facts(
+    entity: NormalizedEntity, attributes: dict[str, Any]
+) -> list[Schema5FactSlot]:
+    """食物/饮品：恢复量与增益（来自官方 Edibility/Buffs，公式与 1.6.15 游戏一致）。"""
+    facts: list[Schema5FactSlot] = []
+    edibility = attributes.get("Edibility")
+    if not isinstance(edibility, int) or isinstance(edibility, bool) or edibility <= 0:
+        return facts
+    item_id = (entity.game_id or "").split("/", maxsplit=1)[0].strip()
+    stamina, health = _food_stamina_health(edibility, item_id)
+    parts: list[str] = []
+    if stamina == 999:
+        parts.append("恢复全部体力")
+    elif stamina is not None:
+        parts.append(f"恢复 {stamina} 体力")
+    if health == 999:
+        parts.append("恢复全部生命")
+    elif health is not None:
+        parts.append(f"恢复 {health} 生命")
+    if parts:
+        facts.append(
+            fixed_fact(entity, "edibility", "text", text_value="、".join(parts))
+        )
+    buffs = attributes.get("Buffs")
+    if not isinstance(buffs, list) or not buffs:
+        return facts
+    labels: list[str] = []
+    for buff in buffs:
+        if not isinstance(buff, dict):
+            continue
+        raw = buff.get("CustomAttributes")
+        if not isinstance(raw, dict):
+            continue
+        values = [
+            (key, raw[key])
+            for key in FOOD_BUFF_ORDER
+            if key in raw and _buff_number(raw[key]) not in (None, 0)
+        ]
+        if not values:
+            continue
+        text = "、".join(
+            f"{FOOD_BUFF_ZH[key]}+{_buff_value_label(value)}" for key, value in values
+        )
+        duration = buff.get("Duration")
+        if isinstance(duration, int) and duration > 0:
+            text += f"（持续 {_food_buff_duration_label(duration)}）"
+        labels.append(text)
+    if labels:
+        facts.append(
+            fixed_fact(entity, "food_buffs", "text", text_value="；".join(labels))
+        )
+    return facts
 
 
 def drop_facts(
@@ -6189,6 +6372,8 @@ def typed_facts(
         facts.extend(tailoring_facts(entity, attributes, by_id))
     if entity.entity_type == "drop":
         facts.extend(drop_facts(entity, attributes, by_id))
+    if entity.entity_type == "object":
+        facts.extend(food_effect_facts(entity, attributes))
     if entity.entity_type == "ginger_island":
         facts.extend(ginger_island_facts(entity, attributes))
     if entity.entity_type == "villager":

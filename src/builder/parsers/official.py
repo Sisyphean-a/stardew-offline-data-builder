@@ -269,7 +269,7 @@ def parse_bundle_rewards(value: object) -> list[dict[str, object]] | None:
     quantity = parse_int(parts[2])
     if quantity is None:
         return None
-    return [{"itemId": parts[1], "quantity": quantity}]
+    return [{"type": parts[0], "itemId": parts[1], "quantity": quantity}]
 
 
 def parse_legacy_schedule(fields: list[str]) -> list[dict[str, object]]:
